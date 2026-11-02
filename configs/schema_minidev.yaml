@@ -1,0 +1,7 @@
+# BIRD MINIDEV schema 建模配置
+dataset: BIRD
+split: MINIDEV
+tables_json: BIRD/MINIDEV/dev_tables.json
+databases_dir: BIRD/MINIDEV/dev_databases
+output_path: outputs/schema/minidev_schema.json
+db_ids: []  # 留空表示全部数据库

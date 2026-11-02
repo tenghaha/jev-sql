@@ -1,0 +1,24 @@
+# JEV schema linking pipeline on BIRD MINIDEV
+dataset: BIRD
+split: MINIDEV
+schema_path: outputs/schema/minidev_schema.json
+questions_path: BIRD/MINIDEV/mini_dev_sqlite.json
+output_dir: outputs/runs/jev_minidev
+
+# One generation call extracts all mentions.
+mention_llm:
+  model_env: OPENAI_API_MODEL
+  api_key_env: OPENAI_API_KEY
+  base_url_env: OPENAI_API_BASE
+  temperature: 0.0
+  timeout: 120
+  max_retries: 2
+
+jev:
+  model: typesafe-ai/jev
+  endpoint_env: JEV_API_BASE
+  api_key_env: AI_GATEWAY_API_KEY
+  timeout: 120
+  max_candidates: 12
+  question_types: [noul, choice, score]
+  score_scale: [irrelevant, weak, relevant, strong]

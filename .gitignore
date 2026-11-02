@@ -1,0 +1,7 @@
+BIRD
+__pycache__/
+logs/
+*.log
+tmp/
+outputs/
+.env
