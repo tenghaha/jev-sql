@@ -1,32 +1,39 @@
-"""Run the JEV schema-linking pipeline over a BIRD split.
+"""Run the two-stage JEV schema-linking pipeline over a BIRD split.
 
 Usage:
     conda run -n znws python scripts/run_batch.py --config configs/pipeline_minidev.yaml
     conda run -n znws python scripts/run_batch.py --config configs/pipeline_minidev.yaml --limit 5
     conda run -n znws python scripts/run_batch.py --config configs/pipeline_minidev.yaml --resume
+    conda run -n znws python scripts/run_batch.py --config configs/pipeline_minidev.yaml --limit 5 --debug
 
 Config fields:
     dataset, split, schema_path, questions_path, output_dir
     mention_llm: model_env / api_key_env / base_url_env
-    jev: model / endpoint_env / api_key_env / max_candidates
+    cascade: stage1_candidates / stage1_column_batch
+             score_scale / stage2_score_threshold
+    jev: model / endpoint_env / api_key_env / timeout
 
 Output:
     Appends one JSON record per question to <output_dir>/batch_answers.jsonl.
-    Prints mentions and raw JEV answers for every question.
     --resume skips questions whose previous record has status=ok.
+    --debug emits full JEV requests and responses through logging.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from jev.config import load_config
+from jev.logging_utils import setup_logging
 from jev.pipeline import load_questions, load_schema, run_question
+
+logger = logging.getLogger("run_batch")
 
 
 def load_done_question_ids(output_path: Path) -> set[str]:
@@ -51,12 +58,15 @@ def append_record(output_path: Path, record: dict) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run a BIRD split through the JEV pipeline.")
+    parser = argparse.ArgumentParser(description="Run a BIRD split through the JEV cascade.")
     parser.add_argument("--config", required=True, help="Path to the experiment YAML config.")
     parser.add_argument("--limit", type=int, default=0, help="Only run the first N questions; 0 means all.")
     parser.add_argument("--resume", action="store_true", help="Skip questions already recorded as ok.")
+    parser.add_argument("--debug", action="store_true",
+                        help="Emit debug logs, including full JEV questions and responses.")
     args = parser.parse_args()
 
+    setup_logging(args.debug)
     config = load_config(args.config)
     databases = load_schema(config["schema_path"])
     questions = load_questions(config["questions_path"])
@@ -67,9 +77,15 @@ def main() -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     done = load_done_question_ids(output_path) if args.resume else set()
 
-    print(f">>> {config['dataset']} / {config['split']} | questions={len(questions)} | output={output_path}")
+    logger.info(
+        "%s / %s | questions=%d | output=%s",
+        config["dataset"],
+        config["split"],
+        len(questions),
+        output_path,
+    )
     if args.resume:
-        print(f">>> resume: {len(done)} questions already ok")
+        logger.info("Resume: %d questions already ok", len(done))
 
     success = 0
     failed = 0
@@ -81,21 +97,28 @@ def main() -> int:
 
         if args.resume and str(question_id) in done:
             skipped += 1
-            print(f"[{index + 1}/{len(questions)}] qid={question_id} skipped")
+            logger.info("[%d/%d] qid=%s skipped", index + 1, len(questions), question_id)
             continue
 
         try:
             result = run_question(item, databases, config, question_id=question_id)
             result["status"] = "ok"
             success += 1
-            print(f"[{index + 1}/{len(questions)}] qid={question_id} db={result['db_id']} status=ok "
-                  f"mentions={len(result['mentions'])} "
-                  f"questions={len(result['jev_request']['questions'])} "
-                  f"elapsed={result['elapsed']['total_seconds']:.1f}s")
-            for mention in result["mentions"]:
-                print(f"    {mention['span_id']}\t{mention['span_type']}\t{mention['text']}")
-            print("    [JEV answers]")
-            print("    " + json.dumps(result["jev_answers"], ensure_ascii=False))
+            logger.info(
+                "[%d/%d] qid=%s db=%s status=ok mentions=%d stage1=%d/%d stage2=%d "
+                "linked=%d elapsed=%.1fs",
+                index + 1,
+                len(questions),
+                question_id,
+                result["db_id"],
+                len(result["mentions"]),
+                len(result["stage1"]["selected_candidates"]),
+                result["stage1"]["num_candidates"],
+                result["stage2"]["num_questions"],
+                len(result["linked_columns_union"]),
+                result["elapsed"]["total_seconds"],
+            )
+            logger.debug("Linked columns: %s", json.dumps(result["linked_columns"], ensure_ascii=False))
         except Exception as exc:
             result = {
                 "question_id": question_id,
@@ -105,12 +128,13 @@ def main() -> int:
                 "error": f"{type(exc).__name__}: {exc}",
             }
             failed += 1
-            print(f"[{index + 1}/{len(questions)}] qid={question_id} status=failed "
-                  f"reason={result['error']}")
+            logger.error("[%d/%d] qid=%s status=failed reason=%s",
+                         index + 1, len(questions), question_id, result["error"])
 
         append_record(output_path, result)
 
-    print(f"\nDone: ok={success} failed={failed} skipped={skipped} | {output_path}")
+    logger.info("Done: ok=%d failed=%d skipped=%d | %s",
+                success, failed, skipped, output_path)
     return 0 if failed == 0 else 1
 
 

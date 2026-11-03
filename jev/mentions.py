@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from langchain_openai import ChatOpenAI
 
 from .config import require_env
 from .utils import message_text, parse_json_object
+
+logger = logging.getLogger(__name__)
 
 MENTION_INSTRUCTIONS = """You extract schema-relevant mentions from a natural-language question for a text-to-SQL task.
 
@@ -53,7 +56,9 @@ def extract_mentions(
             ("human", user_prompt),
         ]
     )
-    data = parse_json_object(message_text(response.content))
+    output_text = message_text(response.content)
+    logger.debug("Mention extraction output: %s", output_text)
+    data = parse_json_object(output_text)
     raw_mentions = data.get("mentions")
     if not isinstance(raw_mentions, list):
         raise ValueError("Mention extraction output has no 'mentions' list")

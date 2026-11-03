@@ -1,9 +1,10 @@
-# JEV schema linking pipeline on BIRD MINIDEV
+# JEV two-stage cascade schema linking on BIRD MINIDEV
 dataset: BIRD
 split: MINIDEV
 schema_path: outputs/schema/minidev_schema.json
 questions_path: BIRD/MINIDEV/mini_dev_sqlite.json
-output_dir: outputs/runs/jev_minidev
+databases_dir: BIRD/MINIDEV/dev_databases
+output_dir: outputs/runs/jev_minidev_cascade
 
 # One generation call extracts all mentions.
 mention_llm:
@@ -14,11 +15,28 @@ mention_llm:
   timeout: 120
   max_retries: 2
 
+cascade:
+  stage1_candidates: 12  # a: columns kept by all-column Noul screening
+  stage1_column_batch: 15  # columns per JEV call; 0 = all columns in one call
+  score_scale: [irrelevant, weak, relevant, strong]
+  stage2_score_threshold: 2.0  # keep Score >= this expected level
+
 jev:
   model: typesafe-ai/jev
   endpoint_env: JEV_API_BASE
   api_key_env: AI_GATEWAY_API_KEY
   timeout: 120
-  max_candidates: 12
-  question_types: [noul, choice, score]
-  score_scale: [irrelevant, weak, relevant, strong]
+
+# All paths below are relative to output_dir.
+eval:
+  preds_file: batch_answers.jsonl
+  report_file: schema_linking.md
+  details_file: schema_linking.json
+  include_missing: false
+
+# Error analysis reads eval details and writes cases under output_dir/analysis.
+analysis:
+  sample_size: 12
+  seed: 42
+  error_cases_file: error_cases.jsonl
+  report_file: error_analysis.md

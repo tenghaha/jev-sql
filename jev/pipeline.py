@@ -1,15 +1,17 @@
-"""End-to-end schema-linking pipeline: question -> mentions -> JEV answers."""
+"""End-to-end schema-linking pipeline: question -> mentions -> cascade -> columns."""
 
 from __future__ import annotations
 
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any
 
-from .jev_client import call_jev
+from .cascade import run_cascade
 from .mentions import extract_mentions
-from .request_builder import build_request
+
+logger = logging.getLogger(__name__)
 
 
 def load_schema(path: str | Path) -> dict[str, dict[str, Any]]:
@@ -27,7 +29,7 @@ def run_question(
     config: dict[str, Any],
     question_id: Any = None,
 ) -> dict[str, Any]:
-    """Run one question through mention extraction and a single JEV call."""
+    """Run one question through mention extraction and the two-stage cascade."""
     started = time.perf_counter()
     question = record["question"]
     db_id = record["db_id"]
@@ -37,36 +39,41 @@ def run_question(
     if db_id not in databases:
         raise KeyError(f"Database not found in schema: {db_id}")
 
+    logger.info("Question %s (%s): %s", question_id, db_id, question)
     mention_started = time.perf_counter()
     mentions = extract_mentions(question, evidence, config["mention_llm"])
     mention_elapsed = time.perf_counter() - mention_started
+    logger.info("Extracted %d mentions", len(mentions))
+    logger.debug("Mentions: %s", json.dumps(mentions, ensure_ascii=False))
 
-    state, questions = build_request(
+    cascade_result = run_cascade(
         question,
         evidence,
         db_id,
         mentions,
         databases[db_id],
+        config["cascade"],
         config["jev"],
     )
-    jev_result = call_jev(state, questions, config["jev"])
 
-    # Downstream schema-linking decisions will consume jev_answers here.
-    raw_usage = jev_result.get("raw", {}).get("usage")
     return {
         "question_id": question_id,
         "db_id": db_id,
         "question": question,
         "evidence": evidence,
         "mentions": mentions,
-        "jev_request": {"state": state, "questions": questions},
-        "jev_answers": jev_result["answers"],
-        "jev_call": {
-            "elapsed_seconds": jev_result["elapsed_seconds"],
+        "stage1": cascade_result["stage1"],
+        "stage2": cascade_result["stage2"],
+        "linked_columns": cascade_result["linked_columns"],
+        "linked_columns_union": cascade_result["linked_columns_union"],
+        "usage": {
+            "stage1": cascade_result["stage1"].get("usage"),
+            "stage2": cascade_result["stage2"].get("usage"),
         },
-        "usage": raw_usage,
         "elapsed": {
             "mentions_seconds": mention_elapsed,
+            "stage1_seconds": cascade_result["stage1"]["elapsed_seconds"],
+            "stage2_seconds": cascade_result["stage2"]["elapsed_seconds"],
             "total_seconds": time.perf_counter() - started,
         },
     }

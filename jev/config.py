@@ -10,7 +10,12 @@ import yaml
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_PATH_FIELDS = ("schema_path", "questions_path", "output_dir")
+CONFIG_PATH_FIELDS = (
+    "schema_path",
+    "questions_path",
+    "databases_dir",
+    "output_dir",
+)
 
 
 def load_environment() -> None:
