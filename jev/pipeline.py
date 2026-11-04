@@ -40,10 +40,16 @@ def run_question(
         raise KeyError(f"Database not found in schema: {db_id}")
 
     logger.info("Question %s (%s): %s", question_id, db_id, question)
+    mentions_enabled = bool((config.get("mentions") or {}).get("enabled", True))
     mention_started = time.perf_counter()
-    mentions = extract_mentions(question, evidence, config["mention_llm"])
+    if mentions_enabled:
+        mentions = extract_mentions(question, evidence, config["mention_llm"])
+        logger.info("Extracted %d mentions", len(mentions))
+    else:
+        # Query-only mode: the raw question is the single scoring span.
+        mentions = [{"span_id": "query", "text": question, "span_type": "query"}]
+        logger.info("Mention extraction disabled; using the raw query as the only span")
     mention_elapsed = time.perf_counter() - mention_started
-    logger.info("Extracted %d mentions", len(mentions))
     logger.debug("Mentions: %s", json.dumps(mentions, ensure_ascii=False))
 
     cascade_result = run_cascade(
@@ -61,6 +67,7 @@ def run_question(
         "db_id": db_id,
         "question": question,
         "evidence": evidence,
+        "mentions_enabled": mentions_enabled,
         "mentions": mentions,
         "stage_table": cascade_result["stage_table"],
         "stage_column": cascade_result["stage_column"],

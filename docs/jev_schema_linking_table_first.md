@@ -450,6 +450,7 @@ analysis:
 |---|---:|---|
 | `output_dir` | - | 单组实验输出根目录；本机制使用新目录，避免覆盖旧结果 |
 | `databases_dir` | - | SQLite 根目录，供评测探查 GT 结构 |
+| `mentions.enabled` | `true` | 是否抽取 mention；`false` 时用原始 query 作为唯一 span（见无 mention 变体文档） |
 | `table_candidates` | 5 | 步骤 1 最多保留的表数 `k` |
 | `table_noul_threshold` | 0.5 | 表级 Noul 阈值；`0` 表示只按 top-k 截断 |
 | `table_column_batch` | 0 | 步骤 2 每个请求的列数；`0` 表示整表一次提交 |

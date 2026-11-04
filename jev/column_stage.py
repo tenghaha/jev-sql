@@ -75,7 +75,7 @@ def run_column_stage(
                 score_scale,
             )
             logger.info(
-                "Stage 2 table %s batch %d/%d: %d mentions x %d columns + %d joins = %d questions",
+                "Stage 2 table %s batch %d/%d: %d spans x %d columns + %d joins = %d questions",
                 table_name,
                 batch_index,
                 len(groups),

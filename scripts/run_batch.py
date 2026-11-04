@@ -105,7 +105,7 @@ def main() -> int:
             result["status"] = "ok"
             success += 1
             logger.info(
-                "[%d/%d] qid=%s db=%s status=ok mentions=%d tables=%d/%d columns_q=%d "
+                "[%d/%d] qid=%s db=%s status=ok spans=%d tables=%d/%d columns_q=%d "
                 "joins=%d/%d linked=%d elapsed=%.1fs",
                 index + 1,
                 len(questions),
