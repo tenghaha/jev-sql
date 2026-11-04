@@ -336,12 +336,7 @@ products         0.01
 
 ## 7. 步骤 3：列 Score 阈值过滤
 
-`jev/column_candidates.py::filter_columns`：
-
-1. 遍历全部候选列（只来自候选表）
-2. 读取 `s2_<mention>_<candidate>` 的 `score`
-3. 保留 `score >= column_score_threshold`，默认 `2.0`
-4. 按 score 降序排列
+默认 `column_select_mode: hard`：每个候选列取全体 span 的最高 Score，`best_score >= column_score_threshold`（默认 `2.0`）即入选。
 
 | score | 含义 | 默认是否保留 |
 |---:|---|---|
@@ -351,6 +346,8 @@ products         0.01
 | 3 | strong | 是 |
 
 未通过阈值的 mention 仍保留在输出中，`columns` 为空，便于分析召回。
+
+`column_select_mode: ambiguous` 时改用双阈值：`>= column_select_high` 直接入选、`< column_select_low` 直接放弃、中间区间再发起一轮 Noul 判定，详见 [docs/jev_schema_linking_table_first_ambiguous.md](jev_schema_linking_table_first_ambiguous.md)。
 
 ## 8. 步骤 4：强制保留外键列
 
@@ -455,7 +452,11 @@ analysis:
 | `table_noul_threshold` | 0.5 | 表级 Noul 阈值；`0` 表示只按 top-k 截断 |
 | `table_column_batch` | 0 | 步骤 2 每个请求的列数；`0` 表示整表一次提交 |
 | `score_scale` | 4 级 | 列 Score 的有序等级 |
-| `column_score_threshold` | 2.0 | 列过滤阈值 |
+| `column_score_threshold` | 2.0 | 列过滤阈值（`hard` 模式） |
+| `column_select_mode` | `hard` | `hard`：单阈值；`ambiguous`：双阈值 + 模糊列二次判定 |
+| `column_select_high` | 2.5 | 直接入选阈值（`ambiguous` 模式） |
+| `column_select_low` | 1.0 | 直接放弃阈值（`ambiguous` 模式） |
+| `ambiguous_noul_threshold` | 0.5 | 模糊列入选的 Noul 阈值（`ambiguous` 模式） |
 | `fk_noul_threshold` | 0.5 | 连接保留阈值，同时决定强制外键列 |
 | `eval.*` | - | 评测文件，相对 `output_dir` |
 | `analysis.*` | - | 错误分析文件，相对 `output_dir` |

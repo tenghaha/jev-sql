@@ -1,11 +1,34 @@
-"""Steps 3-4: score filtering and forced foreign-key columns."""
+"""Steps 3-4: column selection, ambiguity decisions, and forced foreign-key columns."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from .column_candidates import filter_columns
 from .fk_candidates import select_links
+
+
+def classify_columns(
+    scored: dict[str, dict[str, Any]],
+    high: float,
+    low: float,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split columns into direct keeps, ambiguous ones, and dropped ones by best Score."""
+    selected, ambiguous, dropped = [], [], []
+    for entry in scored.values():
+        if entry["best_score"] >= high:
+            selected.append(entry)
+        elif entry["best_score"] < low:
+            dropped.append(entry)
+        else:
+            ambiguous.append(entry)
+
+    def sort_key(item: dict[str, Any]) -> tuple[float, str, str]:
+        return (-item["best_score"], item["table"], item["column"])
+
+    selected.sort(key=sort_key)
+    ambiguous.sort(key=sort_key)
+    dropped.sort(key=sort_key)
+    return selected, ambiguous, dropped
 
 
 def _dtype(column_states: dict[str, dict[str, Any]], table: str, column: str) -> str | None:
@@ -60,19 +83,67 @@ def _force_join_columns(
     return union
 
 
-def finalize_results(
+def finalize_selected(
     mentions: list[dict[str, str]],
+    selected_entries: list[dict[str, Any]],
     column_states: dict[str, dict[str, Any]],
-    column_answers: dict[str, Any],
     link_states: dict[str, dict[str, Any]],
     link_answers: dict[str, Any],
-    column_threshold: float,
     link_threshold: float,
+    mention_score_floor: float,
 ) -> dict[str, Any]:
-    """Apply thresholds, then force foreign-key columns of selected joins."""
-    linked_columns, union = filter_columns(mentions, column_states, column_answers, column_threshold)
+    """Build mention links and the column union from selected entries, then force join columns."""
     selected_links = select_links(link_states, link_answers, link_threshold)
+
+    linked_columns = []
+    for mention in mentions:
+        columns = []
+        for entry in selected_entries:
+            span = next(
+                (item for item in entry["spans"] if item["span_id"] == mention["span_id"]),
+                None,
+            )
+            if span is None or span["score"] < mention_score_floor:
+                continue
+            columns.append(
+                {
+                    "candidate_id": entry["candidate_id"],
+                    "table": entry["table"],
+                    "column": entry["column"],
+                    "dtype": entry["dtype"],
+                    "score": span["score"],
+                    "confidence": span["confidence"],
+                    "source": entry.get("source", "score"),
+                }
+            )
+        columns.sort(key=lambda item: (-item["score"], item["table"], item["column"]))
+        linked_columns.append(
+            {
+                "span_id": mention["span_id"],
+                "text": mention["text"],
+                "span_type": mention.get("span_type", "other"),
+                "columns": columns,
+            }
+        )
+
+    union = []
+    for entry in selected_entries:
+        item = {
+            "table": entry["table"],
+            "column": entry["column"],
+            "dtype": entry["dtype"],
+            "best_score": entry["best_score"],
+            "mentions": [
+                span["span_id"] for span in entry["spans"] if span["score"] >= mention_score_floor
+            ],
+            "sources": [entry.get("source", "score")],
+        }
+        if entry.get("noul") is not None:
+            item["ambiguous_noul"] = entry["noul"]
+        union.append(item)
+    union.sort(key=lambda item: (-item["best_score"], item["table"], item["column"]))
     union = _force_join_columns(union, selected_links, column_states)
+
     return {
         "linked_columns": linked_columns,
         "linked_columns_union": union,

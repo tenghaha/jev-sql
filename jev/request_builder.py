@@ -61,6 +61,46 @@ def build_table_request(
     return state, questions
 
 
+def ambiguous_question_id(candidate_id: str) -> str:
+    return f"s3_{candidate_id}"
+
+
+def build_ambiguous_request(
+    question: str,
+    evidence: str,
+    db_id: str,
+    mentions: list[dict[str, str]],
+    database: dict[str, Any],
+    selected_columns: list[dict[str, Any]],
+    ambiguous_states: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """Build one Noul question per ambiguous column, given the already selected columns."""
+    questions = {}
+    for candidate_id, candidate in ambiguous_states.items():
+        questions[ambiguous_question_id(candidate_id)] = {
+            "type": "noul",
+            "instructions": (
+                f"The column {candidate['table_name']}.{candidate['column_name']} is only weakly "
+                "related to the question. Is it necessary to add it to the already selected column "
+                f"set in order to answer the question: {question}"
+            ),
+        }
+
+    state = {
+        "task": "ambiguous_column_completion",
+        "instruction": (
+            "The selected columns are already a candidate column set for the question. For each "
+            "ambiguous column, decide whether the question cannot be answered without adding it to "
+            "that set. Answer only the provided questions."
+        ),
+        "context": _context(question, evidence, db_id, mentions, database),
+        "selected_columns": selected_columns,
+        "candidates": ambiguous_states,
+        "output_schema": {"noul": "probability in [0, 1]"},
+    }
+    return state, questions
+
+
 def build_table_detail_request(
     question: str,
     evidence: str,

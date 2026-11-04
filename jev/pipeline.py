@@ -72,17 +72,20 @@ def run_question(
         "stage_table": cascade_result["stage_table"],
         "stage_column": cascade_result["stage_column"],
         "stage_join": cascade_result["stage_join"],
+        "stage_ambiguous": cascade_result["stage_ambiguous"],
         "linked_columns": cascade_result["linked_columns"],
         "linked_columns_union": cascade_result["linked_columns_union"],
         "linked_tables": cascade_result["linked_tables"],
         "usage": {
             "table": cascade_result["stage_table"].get("usage"),
             "column": cascade_result["stage_column"].get("usage"),
+            "ambiguous": cascade_result["stage_ambiguous"].get("usage"),
         },
         "elapsed": {
             "mentions_seconds": mention_elapsed,
             "table_seconds": cascade_result["stage_table"]["elapsed_seconds"],
             "column_seconds": cascade_result["stage_column"]["elapsed_seconds"],
+            "ambiguous_seconds": cascade_result["stage_ambiguous"]["elapsed_seconds"],
             "total_seconds": time.perf_counter() - started,
         },
     }

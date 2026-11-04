@@ -40,67 +40,33 @@ def build_column_candidates(
     return candidates
 
 
-def _candidate_sort_key(candidate_id: str) -> tuple[int, int]:
-    table_part, column_part = candidate_id.split("_", 1)
-    return int(table_part[1:]), int(column_part[1:])
-
-
-def filter_columns(
+def collect_column_scores(
     mentions: list[dict[str, str]],
     column_states: dict[str, dict[str, Any]],
     answers: dict[str, Any],
-    threshold: float,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Keep mention-column pairs whose Score reaches the threshold."""
-    linked_columns = []
-    union: dict[tuple[str, str], dict[str, Any]] = {}
-
-    for mention in mentions:
-        columns = []
-        for candidate_id, candidate in column_states.items():
+) -> dict[str, dict[str, Any]]:
+    """Collect per-span Scores and the best Score for every scored column."""
+    results = {}
+    for candidate_id, candidate in column_states.items():
+        spans = []
+        for mention in mentions:
             answer = answers.get(column_question_id(mention["span_id"], candidate_id))
-            score = score_level(answer)
-            if score < threshold:
-                continue
-            columns.append(
+            spans.append(
                 {
-                    "candidate_id": candidate_id,
-                    "table": candidate["table_name"],
-                    "column": candidate["column_name"],
-                    "dtype": candidate["dtype"],
-                    "score": round(score, 4),
+                    "span_id": mention["span_id"],
+                    "text": mention.get("text", ""),
+                    "span_type": mention.get("span_type", "other"),
+                    "score": round(score_level(answer), 4),
                     "confidence": round(answer_confidence(answer), 4),
-                    "source": "score",
                 }
             )
-
-            key = (candidate["table_name"], candidate["column_name"])
-            if key not in union:
-                union[key] = {
-                    "table": candidate["table_name"],
-                    "column": candidate["column_name"],
-                    "dtype": candidate["dtype"],
-                    "best_score": round(score, 4),
-                    "mentions": [mention["span_id"]],
-                    "sources": ["score"],
-                }
-            else:
-                union[key]["best_score"] = max(union[key]["best_score"], round(score, 4))
-                if mention["span_id"] not in union[key]["mentions"]:
-                    union[key]["mentions"].append(mention["span_id"])
-
-        columns.sort(key=lambda item: (-item["score"], _candidate_sort_key(item["candidate_id"])))
-        linked_columns.append(
-            {
-                "span_id": mention["span_id"],
-                "text": mention["text"],
-                "span_type": mention.get("span_type", "other"),
-                "columns": columns,
-            }
-        )
-
-    union_columns = sorted(
-        union.values(),
-        key=lambda item: (-item["best_score"], item["table"], item["column"]),
-    )
-    return linked_columns, union_columns
+        best = max(spans, key=lambda item: item["score"]) if spans else {"score": 0.0}
+        results[candidate_id] = {
+            "candidate_id": candidate_id,
+            "table": candidate["table_name"],
+            "column": candidate["column_name"],
+            "dtype": candidate["dtype"],
+            "best_score": round(float(best["score"]), 4),
+            "spans": spans,
+        }
+    return results
