@@ -1,4 +1,4 @@
-"""End-to-end schema-linking pipeline: question -> mentions -> cascade -> columns."""
+"""End-to-end schema-linking pipeline: question -> mentions -> table-first cascade -> columns."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def run_question(
     config: dict[str, Any],
     question_id: Any = None,
 ) -> dict[str, Any]:
-    """Run one question through mention extraction and the two-stage cascade."""
+    """Run one question through mention extraction and the table-first cascade."""
     started = time.perf_counter()
     question = record["question"]
     db_id = record["db_id"]
@@ -62,18 +62,20 @@ def run_question(
         "question": question,
         "evidence": evidence,
         "mentions": mentions,
-        "stage1": cascade_result["stage1"],
-        "stage2": cascade_result["stage2"],
+        "stage_table": cascade_result["stage_table"],
+        "stage_column": cascade_result["stage_column"],
+        "stage_join": cascade_result["stage_join"],
         "linked_columns": cascade_result["linked_columns"],
         "linked_columns_union": cascade_result["linked_columns_union"],
+        "linked_tables": cascade_result["linked_tables"],
         "usage": {
-            "stage1": cascade_result["stage1"].get("usage"),
-            "stage2": cascade_result["stage2"].get("usage"),
+            "table": cascade_result["stage_table"].get("usage"),
+            "column": cascade_result["stage_column"].get("usage"),
         },
         "elapsed": {
             "mentions_seconds": mention_elapsed,
-            "stage1_seconds": cascade_result["stage1"]["elapsed_seconds"],
-            "stage2_seconds": cascade_result["stage2"]["elapsed_seconds"],
+            "table_seconds": cascade_result["stage_table"]["elapsed_seconds"],
+            "column_seconds": cascade_result["stage_column"]["elapsed_seconds"],
             "total_seconds": time.perf_counter() - started,
         },
     }

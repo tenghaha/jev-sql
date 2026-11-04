@@ -1,5 +1,7 @@
 # JEV 两阶段 Schema Linking 机制说明
 
+> 注：本文描述列优先的旧级联机制。当前代码已切换为表优先机制，见 `docs/jev_schema_linking_table_first.md`。
+
 本文档说明当前实验代码中的 JEV 请求/响应格式、两阶段级联机制、筛选规则、日志与输出结构。示例数据来自 BIRD MINIDEV 的 `question_id=1471`（`debit_card_specializing`）。
 
 ## 1. 总体流程

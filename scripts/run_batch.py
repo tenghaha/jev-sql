@@ -1,16 +1,16 @@
-"""Run the two-stage JEV schema-linking pipeline over a BIRD split.
+"""Run the table-first JEV schema-linking pipeline over a BIRD split.
 
 Usage:
-    conda run -n znws python scripts/run_batch.py --config configs/pipeline_minidev.yaml
-    conda run -n znws python scripts/run_batch.py --config configs/pipeline_minidev.yaml --limit 5
-    conda run -n znws python scripts/run_batch.py --config configs/pipeline_minidev.yaml --resume
-    conda run -n znws python scripts/run_batch.py --config configs/pipeline_minidev.yaml --limit 5 --debug
+    conda run -n znws python scripts/run_batch.py --config configs/pipeline_minidev_table_first.yaml
+    conda run -n znws python scripts/run_batch.py --config configs/pipeline_minidev_table_first.yaml --limit 5
+    conda run -n znws python scripts/run_batch.py --config configs/pipeline_minidev_table_first.yaml --resume
+    conda run -n znws python scripts/run_batch.py --config configs/pipeline_minidev_table_first.yaml --limit 5 --debug
 
 Config fields:
-    dataset, split, schema_path, questions_path, output_dir
+    dataset, split, schema_path, questions_path, databases_dir, output_dir
     mention_llm: model_env / api_key_env / base_url_env
-    cascade: stage1_candidates / stage1_column_batch
-             score_scale / stage2_score_threshold
+    cascade: table_candidates / table_noul_threshold / table_column_batch
+             score_scale / column_score_threshold / fk_noul_threshold
     jev: model / endpoint_env / api_key_env / timeout
 
 Output:
@@ -105,16 +105,18 @@ def main() -> int:
             result["status"] = "ok"
             success += 1
             logger.info(
-                "[%d/%d] qid=%s db=%s status=ok mentions=%d stage1=%d/%d stage2=%d "
-                "linked=%d elapsed=%.1fs",
+                "[%d/%d] qid=%s db=%s status=ok mentions=%d tables=%d/%d columns_q=%d "
+                "joins=%d/%d linked=%d elapsed=%.1fs",
                 index + 1,
                 len(questions),
                 question_id,
                 result["db_id"],
                 len(result["mentions"]),
-                len(result["stage1"]["selected_candidates"]),
-                result["stage1"]["num_candidates"],
-                result["stage2"]["num_questions"],
+                len(result["stage_table"]["selected_tables"]),
+                result["stage_table"]["num_candidates"],
+                result["stage_column"]["num_questions"],
+                len(result["stage_join"]["selected_links"]),
+                result["stage_join"]["num_candidates"],
                 len(result["linked_columns_union"]),
                 result["elapsed"]["total_seconds"],
             )

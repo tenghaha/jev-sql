@@ -116,7 +116,7 @@ def main() -> int:
     threshold = (
         args.threshold
         if args.threshold is not None
-        else float((config.get("cascade") or {}).get("stage2_score_threshold", 2.0))
+        else float((config.get("cascade") or {}).get("column_score_threshold", 2.0))
     )
 
     if not eval_details_path.exists():

@@ -1,3 +1,5 @@
+# Legacy column-first cascade config (old mechanism).
+# The current pipeline is table-first; use configs/pipeline_minidev_table_first.yaml.
 # JEV two-stage cascade schema linking on BIRD MINIDEV
 dataset: BIRD
 split: MINIDEV

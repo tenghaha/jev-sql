@@ -36,6 +36,8 @@ def build_mention_llm(config: dict[str, Any]) -> ChatOpenAI:
         temperature=config.get("temperature", 0.0),
         timeout=config.get("timeout", 120),
         max_retries=config.get("max_retries", 2),
+        # Disable reasoning mode for mention extraction.
+        extra_body={"enable_thinking": False},
     )
 
 

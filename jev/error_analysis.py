@@ -8,8 +8,6 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from jev.evaluation import load_predictions
-
 
 def _norm(value: Any) -> str:
     return str(value).casefold()
@@ -140,6 +138,34 @@ def _columns_for_table(columns: list[str], table: str) -> list[str]:
     return [column for column in columns if _norm(column).startswith(prefix)]
 
 
+def _selected_columns(prediction: dict[str, Any]) -> list[dict[str, Any]]:
+    """Selected columns for both the table-first and the legacy column-first records."""
+    stage_table = prediction.get("stage_table")
+    if isinstance(stage_table, dict):
+        stage_column = prediction.get("stage_column") or {}
+        tables = stage_column.get("tables") or {}
+        rows = []
+        for item in stage_table.get("selected_tables") or []:
+            table_id = item.get("table_id")
+            for column in (tables.get(table_id) or {}).get("columns") or []:
+                rows.append(
+                    {
+                        "candidate_id": column.get("candidate_id"),
+                        "table": item.get("table"),
+                        "column": column.get("column"),
+                        "noul": item.get("noul"),
+                    }
+                )
+        return rows
+    return (prediction.get("stage1") or {}).get("selected_candidates") or []
+
+
+def _stage_answers(prediction: dict[str, Any]) -> dict[str, Any]:
+    if prediction.get("stage_table") is not None:
+        return (prediction.get("stage_column") or {}).get("answers") or {}
+    return (prediction.get("stage2") or {}).get("answers") or {}
+
+
 def build_cases(
     eval_result: dict[str, Any],
     questions_by_id: dict[str, dict[str, Any]],
@@ -181,15 +207,13 @@ def build_cases(
 
         mentions = prediction.get("mentions") or []
         mention_map = {item.get("span_id"): item for item in mentions}
-        stage1 = prediction.get("stage1") or {}
-        stage2 = prediction.get("stage2") or {}
-        selected = stage1.get("selected_candidates") or []
+        selected = _selected_columns(prediction)
         selected_by_key = {
             _norm(f"{item.get('table')}.{item.get('column')}"): item
             for item in selected
             if item.get("table") and item.get("column")
         }
-        stage2_answers = stage2.get("answers") or {}
+        stage2_answers = _stage_answers(prediction)
         linked_columns = prediction.get("linked_columns") or []
         linked_union = prediction.get("linked_columns_union") or []
 
@@ -605,10 +629,10 @@ def write_markdown_report(
     attribution = summary.get("missing_column_attribution") or {}
     attribution_total = max(1, sum(attribution.values()))
     reason_labels = {
-        "not_in_stage1": "未进入 Stage 1 top-a",
-        "below_threshold": "Stage 2 Score 低于阈值",
-        "no_answer": "缺少 Stage 2 答案",
-        "selected_but_missing": "已选中且过阈值但未进入最终结果",
+        "not_in_stage1": "未进入候选表/候选列",
+        "below_threshold": "Score 低于阈值",
+        "no_answer": "缺少 Score 答案",
+        "selected_but_missing": "已过阈值但未进入最终结果",
     }
     for reason, label in reason_labels.items():
         value = int(attribution.get(reason, 0))
@@ -672,9 +696,9 @@ def write_markdown_report(
     )
     if sum(attribution.values()) > 0:
         lines.append(
-            f"- 少选列共 {sum(attribution.values())} 个，其中未进入 Stage 1 top-a "
+            f"- 少选列共 {sum(attribution.values())} 个，其中未进入候选表/候选列 "
             f"{attribution.get('not_in_stage1', 0)} 个，Score 低于阈值 {attribution.get('below_threshold', 0)} 个，"
-            f"缺少 Stage 2 答案 {attribution.get('no_answer', 0)} 个。"
+            f"缺少 Score 答案 {attribution.get('no_answer', 0)} 个。"
         )
     extra_total = sum(buckets.values())
     if extra_total:
