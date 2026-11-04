@@ -6,7 +6,11 @@ questions_path: BIRD/MINIDEV/mini_dev_sqlite.json
 databases_dir: BIRD/MINIDEV/dev_databases
 output_dir: outputs/runs/jev_minidev_table_first_ambiguous
 
-# One generation call extracts all mentions.
+# Mention extraction is disabled: only the raw query is used.
+mentions:
+  enabled: false
+
+# Kept for config compatibility; unused when mentions.enabled is false.
 mention_llm:
   model_env: OPENAI_API_MODEL
   api_key_env: OPENAI_API_KEY
