@@ -1,0 +1,11 @@
+# Python 3.11
+requests==2.34.2
+PyYAML==6.0.2
+python-dotenv==1.2.2
+langchain-openai==1.0.0
+sqlparse==0.5.5
+
+# Pulled in by langchain-openai; pinned for reproducible LLM calls.
+langchain-core==1.4.8
+openai==2.54.0
+tiktoken==0.13.0
