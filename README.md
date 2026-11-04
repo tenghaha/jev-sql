@@ -34,13 +34,24 @@ BIRD/                        数据集（gitignore）
 
 ## 环境准备
 
-- Python 依赖已安装在 conda 环境 `znws`，统一用 `conda run -n znws python ...` 执行。
-- 环境变量从项目根目录 `.env` 读取：
+- 需要 Python 3.11（开发环境为 conda `znws`，Python 3.11.15）。
+- 第三方依赖见 `requirements.txt`，只包含代码显式 import 的包及其锁定版本（`langchain-core`、`openai`、`tiktoken` 为 `langchain-openai` 的关键传递依赖，一并锁定）。
+
+```powershell
+conda create -n znws python=3.11 -y
+conda activate znws
+pip install -r requirements.txt
+```
+
+- 环境变量从项目根目录 `.env` 读取（`.env` 已在 `.gitignore` 中）：
 
 ```text
 OPENAI_API_KEY / OPENAI_API_BASE / OPENAI_API_MODEL     生成式 LLM（mention 抽取）
 AI_GATEWAY_API_KEY / JEV_API_BASE                      JEV 决策模型
 ```
+
+- 数据集 `BIRD/` 与运行产物 `outputs/` 默认不入库，需本地准备后放在项目根目录。
+- 所有命令统一用 `conda run -n znws python ...` 执行。
 
 - mention 抽取通过 LangChain `ChatOpenAI` 调用，并固定传入 `enable_thinking=false` 关闭思考模式。
 
