@@ -1,7 +1,7 @@
 """Analyze schema-linking errors and write a Markdown report with sampled cases.
 
 Usage:
-    conda run -n znws python scripts/analyze_errors.py --config configs/pipeline_minidev.yaml
+    conda run -n znwsDD
     conda run -n znws python scripts/analyze_errors.py --config configs/pipeline_minidev.yaml --sample-size 20
     conda run -n znws python scripts/analyze_errors.py --config configs/pipeline_minidev.yaml \
         --cases outputs/runs/jev_minidev_cascade/analysis/error_cases.jsonl \
