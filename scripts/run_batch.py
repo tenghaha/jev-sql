@@ -8,9 +8,10 @@ Usage:
 
 Config fields:
     dataset, split, schema_path, questions_path, databases_dir, output_dir
+    mentions: enabled
     mention_llm: model_env / api_key_env / base_url_env
     cascade: table_candidates / table_noul_threshold / table_column_batch
-             score_scale / column_score_threshold / fk_noul_threshold
+             score_scale / column_select_mode / column_score_threshold
     jev: model / endpoint_env / api_key_env / timeout
 
 Output:
@@ -106,7 +107,7 @@ def main() -> int:
             success += 1
             logger.info(
                 "[%d/%d] qid=%s db=%s status=ok spans=%d tables=%d/%d columns_q=%d "
-                "joins=%d/%d linked=%d elapsed=%.1fs",
+                "pairs=%d join_cols=%d linked=%d elapsed=%.1fs",
                 index + 1,
                 len(questions),
                 question_id,
@@ -115,8 +116,8 @@ def main() -> int:
                 len(result["stage_table"]["selected_tables"]),
                 result["stage_table"]["num_candidates"],
                 result["stage_column"]["num_questions"],
-                len(result["stage_join"]["selected_links"]),
-                result["stage_join"]["num_candidates"],
+                result["stage_join"]["num_pairs"],
+                len(result["stage_join"]["chosen_columns"]),
                 len(result["linked_columns_union"]),
                 result["elapsed"]["total_seconds"],
             )

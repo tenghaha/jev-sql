@@ -13,10 +13,12 @@ jev/                         核心库
   candidates.py              JEV 答案解析、紧凑 schema 等共享原语
   table_candidates.py        步骤 1：表级候选与 Noul 排序
   table_stage.py             步骤 1：构建请求、提交、选表
-  fk_candidates.py           从 gold schema 提取外键候选、连接选择
+  fk_candidates.py           步骤 3：结果表配对、连接列解析
   column_candidates.py       步骤 2：列候选、Score 过滤
-  column_stage.py            步骤 2：按表提交列打分与外键判断
-  finalize.py                步骤 3/4：阈值过滤与强制外键列
+  column_stage.py            步骤 2：按表提交列打分
+  ambiguous_stage.py         步骤 2b：模糊列二次判定（`column_select_mode: ambiguous`）
+  finalize.py                步骤 3：列筛选与最终列集合
+  result_join_stage.py       步骤 3：结果表连接列补全
   cascade.py                 四步流程编排
   request_builder.py         各步骤 state / questions 组装
   jev_client.py              JEV HTTP 传输
@@ -58,7 +60,7 @@ AI_GATEWAY_API_KEY / JEV_API_BASE                      JEV 决策模型
 ## 实验流程
 
 ```text
-schema 构建 → 单题/批量推理 → 评测 → 错误分析
+schema 构建 → 单题/批量推理 → schema linking 评测 → 错误分析 → EX 评测
 ```
 
 ## 配置
@@ -77,10 +79,12 @@ schema 构建 → 单题/批量推理 → 评测 → 错误分析
 | `cascade.table_noul_threshold` | 表级 Noul 阈值，`0` 表示只按 top-k 截断 |
 | `cascade.table_column_batch` | 步骤 2 每个请求的列数，`0` 表示整表一次提交 |
 | `cascade.score_scale` | 列 Score 等级 |
-| `cascade.column_score_threshold` | 列 Score 阈值 |
-| `cascade.fk_noul_threshold` | 外键连接保留阈值 |
+| `cascade.column_score_threshold` | 列 Score 阈值（`hard` 模式） |
+| `cascade.column_select_mode` | 列筛选模式：`hard` 单阈值 / `ambiguous` 双阈值 + 二次判定 |
 | `jev.*` | JEV 模型、端点与密钥环境变量 |
-| `eval.*` / `analysis.*` | 评测与错误分析产物文件名（相对 `output_dir`） |
+| `eval.*` / `analysis.*` | schema linking 评测与错误分析产物文件名（相对 `output_dir`） |
+| `sql_generation.*` | EX 评测中一次性 SQL 生成的生成式 LLM 环境变量、温度与超时 |
+| `ex.*` | EX 评测的输入/输出文件名与执行超时（相对 `output_dir`） |
 
 新增实验时复制配置文件后修改 `output_dir`，避免覆盖既有结果。
 
@@ -176,17 +180,48 @@ conda run -n znws python scripts/analyze_errors.py --config configs/pipeline_min
 
 报告包含总体指标、表/列多选与少选分布、平均 FP/FN、少选归因、多选 Score 分布、高频错误列、按数据库拆分，以及错例抽样详细分析。
 
+### 6. EX 评测（端到端执行准确率）
+
+```powershell
+conda run -n znws python scripts/evaluate_ex.py --config configs/pipeline_minidev_table_first_result_join.yaml
+conda run -n znws python scripts/evaluate_ex.py --config configs/pipeline_minidev_table_first_result_join.yaml --limit 20
+conda run -n znws python scripts/evaluate_ex.py --config configs/pipeline_minidev_table_first_result_join.yaml --resume
+conda run -n znws python scripts/evaluate_ex.py --config configs/pipeline_minidev_table_first_result_join.yaml --no-generate
+```
+
+| 参数 | 说明 |
+|---|---|
+| `--limit` | 只跑前 N 题，`0` 为全部 |
+| `--resume` | 复用已生成的 SQL，跳过重复生成 |
+| `--no-generate` | 不调用 LLM，直接评测已有生成缓存 |
+| `--workers` | SQL 执行并行度，缺省按 CPU 自动 |
+
+流程：读取批量推理的 `batch_answers.jsonl`，把每题 `linked_columns_union` 渲染为紧凑 schema，用 `sql_generation` 指定的生成式 LLM 一次性生成 SQL，在 SQLite 上执行并与 gold SQL 的结果集比较。
+
+指标：EX（结果集相等，官方口径）、表/字段 P/R/F1（SQLite authorizer 在 `EXPLAIN` 阶段提取实际读取的表与列，micro 口径），并给出分难度与分数据库拆分。
+
+产物：
+
+```text
+<output_dir>/ex_predictions.jsonl    每题生成的 SQL（可 --resume 复用）
+<output_dir>/ex_results.json         执行结果与指标汇总（含每题明细）
+<output_dir>/reports/execution.md    Markdown 评测报告
+```
+
 ## 输出结构
 
 ```text
 <output_dir>/
 ├── single/q<question_id>.json     单题完整记录
 ├── batch_answers.jsonl            批量记录（含 mentions、各阶段答案与最终列）
+├── ex_predictions.jsonl           每题生成的 SQL（EX 评测）
+├── ex_results.json                EX 执行结果与指标汇总
 ├── analysis/error_cases.jsonl     错例与原始 answers 的关联文件
 └── reports/
     ├── schema_linking.md          评测报告
     ├── schema_linking.json        逐样本评测明细
-    └── error_analysis.md          错误分析报告
+    ├── error_analysis.md          错误分析报告
+    └── execution.md               EX 评测报告
 ```
 
 ## 机制说明
@@ -194,11 +229,11 @@ conda run -n znws python scripts/analyze_errors.py --config configs/pipeline_min
 本分支（`dev_tc`）采用**先表后列**：
 
 1. 表级 Noul：用紧凑表 schema 判断每张表是否需要；
-2. 按表打分：每个候选表单独提交，做 mention × 列 Score，并判断本表与其他候选表的外键连接是否需要；
-3. 列 Score 阈值过滤；
-4. 对保留的外键连接强制保留两端列，得到最终列与表。
+2. 按表打分：每个候选表单独提交，做 mention × 列 Score；
+3. 列筛选：`hard` 模式按单阈值，`ambiguous` 模式按双阈值并对模糊列追加一轮 Noul；
+4. 结果表连接补全：对含结果列的表两两配对，用两个 choice 问题分别判断两侧最可能的连接列，把结果加入列集合并去重。
 
-外键候选来自生成的 gold schema 中的 `adjacent_tables`。
+连接列由 JEV 依据两张表的 schema 判定，不使用 schema 中的表间信息，也不使用 gold SQL。
 
 详细说明见 [docs/jev_schema_linking_table_first.md](docs/jev_schema_linking_table_first.md)。
 

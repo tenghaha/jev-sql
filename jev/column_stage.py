@@ -1,4 +1,4 @@
-"""Step 2: per-table column scoring and join-link decisions."""
+"""Step 2: per-table column scoring."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 from .column_candidates import build_column_candidates
-from .fk_candidates import links_for_table
 from .jev_client import call_jev
 from .request_builder import DEFAULT_SCORE_SCALE, build_table_detail_request
 from .stage_utils import chunk, merge_noul_answers, merge_usage
@@ -32,7 +31,6 @@ def run_column_stage(
     mentions: list[dict[str, str]],
     database: dict[str, Any],
     selected_tables: list[dict[str, Any]],
-    link_states: dict[str, dict[str, Any]],
     cascade_config: dict[str, Any],
     jev_config: dict[str, Any],
 ) -> dict[str, Any]:
@@ -53,7 +51,6 @@ def run_column_stage(
         table = table_map[table_name.casefold()]
         column_states = build_column_candidates(table_id, table)
         column_states_all.update(column_states)
-        links = links_for_table(link_states, table_name)
         groups = chunk(list(column_states), batch_size)
 
         table_usage: dict[str, Any] = {}
@@ -61,7 +58,6 @@ def run_column_stage(
         table_elapsed = 0.0
         for batch_index, group in enumerate(groups, start=1):
             group_states = {candidate_id: column_states[candidate_id] for candidate_id in group}
-            batch_links = links if batch_index == 1 else {}
             state, questions = build_table_detail_request(
                 question,
                 evidence,
@@ -71,17 +67,15 @@ def run_column_stage(
                 table_id,
                 table,
                 group_states,
-                batch_links,
                 score_scale,
             )
             logger.info(
-                "Stage 2 table %s batch %d/%d: %d spans x %d columns + %d joins = %d questions",
+                "Stage 2 table %s batch %d/%d: %d spans x %d columns = %d questions",
                 table_name,
                 batch_index,
                 len(groups),
                 len(mentions),
                 len(group_states),
-                len(batch_links),
                 len(questions),
             )
             result = call_jev(state, questions, jev_config)
@@ -99,7 +93,6 @@ def run_column_stage(
             "num_batches": len(groups),
             "num_questions": table_questions,
             "columns": _column_record(column_states),
-            "num_join_candidates": len(links),
             "elapsed_seconds": round(table_elapsed, 3),
             "usage": table_usage or None,
         }

@@ -1,0 +1,70 @@
+# Table-first JEV schema linking on BIRD MINIDEV with an extra JEV round for ambiguous
+# columns and a result-table join completion step.
+dataset: BIRD
+split: MINIDEV
+schema_path: outputs/schema/minidev_schema.json
+questions_path: BIRD/MINIDEV/mini_dev_sqlite.json
+databases_dir: BIRD/MINIDEV/dev_databases
+output_dir: outputs/runs/jev_minidev_table_first_result_join
+
+# Mention extraction is disabled: only the raw query is used.
+mentions:
+  enabled: false
+
+# Kept for config compatibility; unused when mentions.enabled is false.
+mention_llm:
+  model_env: OPENAI_API_MODEL
+  api_key_env: OPENAI_API_KEY
+  base_url_env: OPENAI_API_BASE
+  temperature: 0.0
+  timeout: 120
+  max_retries: 2
+
+cascade:
+  table_candidates: 5  # k: candidate tables kept by table-level Noul screening
+  table_noul_threshold: 0.5  # keep tables with Noul >= this probability; 0 disables filtering
+  table_column_batch: 0  # columns per JEV call in step 2; 0 = all columns of the table
+  score_scale: [irrelevant, weak, relevant, strong]
+  column_select_mode: ambiguous  # hard: single threshold; ambiguous: extra JEV round
+  column_select_high: 2.5  # best Score >= this value is kept directly
+  column_select_low: 1.0  # best Score < this value is dropped; in-between columns go to the extra round
+  ambiguous_noul_threshold: 0.5  # ambiguous column is added when Noul >= this probability
+  column_score_threshold: 2.0  # hard mode only
+
+jev:
+  model: typesafe-ai/jev
+  endpoint_env: JEV_API_BASE
+  api_key_env: AI_GATEWAY_API_KEY
+  timeout: 120
+
+# All paths below are relative to output_dir.
+eval:
+  preds_file: batch_answers.jsonl
+  report_file: schema_linking.md
+  details_file: schema_linking.json
+  include_missing: false
+
+# Error analysis reads eval details and writes cases under output_dir/analysis.
+analysis:
+  sample_size: 12
+  seed: 42
+  error_cases_file: error_cases.jsonl
+  report_file: error_analysis.md
+
+# SQL generation from the JEV-linked schema, for end-to-end EX (scripts/evaluate_ex.py).
+sql_generation:
+  model_env: OPENAI_API_MODEL
+  api_key_env: OPENAI_API_KEY
+  base_url_env: OPENAI_API_BASE
+  temperature: 0.0
+  timeout: 120
+  max_retries: 2
+
+# All paths below are relative to output_dir.
+ex:
+  input_file: batch_answers.jsonl      # schema-linking run feeding the linked schema
+  predictions_file: ex_predictions.jsonl
+  results_file: ex_results.json
+  report_file: execution.md            # relative to output_dir/reports
+  execution_timeout: 30.0              # per-SQL execution timeout in seconds
+  include_missing: false

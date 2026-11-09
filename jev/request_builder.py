@@ -6,7 +6,7 @@ from typing import Any
 
 from .candidates import schema_summary
 from .column_candidates import column_question_id
-from .fk_candidates import link_question_id
+from .fk_candidates import choice_question_id
 from .table_candidates import table_question_id
 
 DEFAULT_SCORE_SCALE = ["irrelevant", "weak", "relevant", "strong"]
@@ -101,6 +101,72 @@ def build_ambiguous_request(
     return state, questions
 
 
+def build_result_join_request(
+    db_id: str,
+    database: dict[str, Any],
+    pairs: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """Build two choice questions per result-table pair, one per direction."""
+    table_map = {table["name"].casefold(): table for table in database["tables"]}
+    pair_states = {}
+    questions = {}
+    for pair in pairs:
+        left = table_map[pair["left_table"].casefold()]
+        right = table_map[pair["right_table"].casefold()]
+        pair_states[pair["pair_id"]] = {
+            "left_table": _table_schema(left),
+            "right_table": _table_schema(right),
+        }
+        for side, table, other in (
+            ("a", left, right),
+            ("b", right, left),
+        ):
+            questions[choice_question_id(pair["pair_id"], side)] = {
+                "type": "choice",
+                "instructions": (
+                    f"In table {table['name']}, which column is most likely the foreign key "
+                    f"column that joins it with table {other['name']}?"
+                ),
+                "criteria": {
+                    column["name"]: _column_criterion(table, column)
+                    for column in table["columns"]
+                },
+            }
+
+    state = {
+        "task": "result_table_join_key_choice",
+        "instruction": (
+            "Every pair below holds two result tables with their full column lists. For each pair, "
+            "pick from the questioned table the single column that is most likely used to join it "
+            "with the other table. Answer only the provided questions."
+        ),
+        "context": {"database": db_id},
+        "pairs": pair_states,
+        "output_schema": {"choice": "one column name from the questioned table"},
+    }
+    return state, questions
+
+
+def _table_schema(table: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "table": table["name"],
+        "primary_key": list(table["primary_key"]),
+        "columns": [
+            {"name": column["name"], "type": column["type"]} for column in table["columns"]
+        ],
+    }
+
+
+def _column_criterion(table: dict[str, Any], column: dict[str, Any]) -> str:
+    """Describe one column as a choice criterion."""
+    label = "primary key column" if column["name"] in table["primary_key"] else "column"
+    text = f"{table['name']}.{column['name']}, a {column['type']} {label}"
+    sample = column.get("sample")
+    if sample is not None:
+        text += f", values like {str(sample)[:40]}"
+    return text
+
+
 def build_table_detail_request(
     question: str,
     evidence: str,
@@ -110,10 +176,9 @@ def build_table_detail_request(
     table_id: str,
     table: dict[str, Any],
     column_states: dict[str, dict[str, Any]],
-    link_states: dict[str, dict[str, Any]],
     score_scale: list[str],
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
-    """Build column Score questions and join Noul questions for one focus table."""
+    """Build column Score questions for one focus table."""
     questions = {}
     for mention in mentions:
         for candidate_id, candidate in column_states.items():
@@ -125,23 +190,13 @@ def build_table_detail_request(
                 ),
                 "criteria": list(score_scale),
             }
-    for link_id, link in link_states.items():
-        questions[link_question_id(link_id)] = {
-            "type": "noul",
-            "instructions": (
-                f'Is the join {link["child_table"]}.{link["child_column"]} = '
-                f'{link["parent_table"]}.{link["parent_column"]} needed to connect the focus table '
-                f'{table["name"]} with {link["other_table"]} for this question?'
-            ),
-        }
 
     state = {
         "task": "table_column_linking",
         "instruction": (
             "Score how strongly each evidence span matches each candidate column of the focus "
-            "table. Also decide whether each listed join candidate is needed to connect the focus "
-            "table with another candidate table. The full database schema is provided as context. "
-            "Answer only the provided questions."
+            "table. The full database schema is provided as context. Answer only the provided "
+            "questions."
         ),
         "context": _context(question, evidence, db_id, mentions, database),
         "focus_table": {
@@ -150,10 +205,8 @@ def build_table_detail_request(
             "primary_key": list(table["primary_key"]),
         },
         "candidates": column_states,
-        "join_candidates": link_states,
         "output_schema": {
             "score": "expected level index",
-            "noul": "probability in [0, 1]",
             "confidence": "probability in [0, 1]",
         },
     }

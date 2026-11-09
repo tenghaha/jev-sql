@@ -4,4 +4,5 @@ split: MINIDEV
 tables_json: BIRD/MINIDEV/dev_tables.json
 databases_dir: BIRD/MINIDEV/dev_databases
 output_path: outputs/schema/minidev_schema.json
+include_adjacent_tables: true  # 是否写入邻表与外键；false 生成无表间信息的 schema
 db_ids: []  # 留空表示全部数据库

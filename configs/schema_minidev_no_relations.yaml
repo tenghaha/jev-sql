@@ -1,0 +1,8 @@
+# BIRD MINIDEV schema 建模配置：不含任何表间信息（邻表、外键）
+dataset: BIRD
+split: MINIDEV
+tables_json: BIRD/MINIDEV/dev_tables.json
+databases_dir: BIRD/MINIDEV/dev_databases
+output_path: outputs/schema/minidev_schema_no_relations.json
+include_adjacent_tables: false  # 邻表与外键信息一律不写入，adjacent_tables 为空
+db_ids: []  # 留空表示全部数据库

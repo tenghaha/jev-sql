@@ -1,4 +1,4 @@
-"""Table-first cascade: table Noul, per-table column scoring, column selection, forced FK columns."""
+"""Table-first cascade: table Noul, per-table column scoring, column selection, result joins."""
 
 from __future__ import annotations
 
@@ -10,9 +10,10 @@ from .ambiguous_stage import empty_record as empty_ambiguous_record
 from .ambiguous_stage import run_ambiguous_stage
 from .column_candidates import collect_column_scores
 from .column_stage import run_column_stage
-from .finalize import classify_columns, finalize_selected
-from .fk_candidates import build_link_candidates
+from .finalize import add_join_columns, classify_columns, finalize_selected
 from .request_builder import DEFAULT_SCORE_SCALE
+from .result_join_stage import empty_record as empty_join_record
+from .result_join_stage import run_result_join_stage
 from .table_stage import run_table_stage
 
 logger = logging.getLogger(__name__)
@@ -44,20 +45,7 @@ def _empty_stages(
         "elapsed_seconds": 0.0,
         "usage": None,
     }
-    stage_join = {
-        "threshold": float(cascade_config.get("fk_noul_threshold", 0.5)),
-        "num_candidates": 0,
-        "candidates": [],
-        "answers": {},
-        "selected_links": [],
-    }
-    return stage_table, stage_column, stage_join, empty_ambiguous_record(cascade_config)
-
-
-def _split_answers(answers: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    column_answers = {key: value for key, value in answers.items() if key.startswith("s2_")}
-    join_answers = {key: value for key, value in answers.items() if key.startswith("j_")}
-    return column_answers, join_answers
+    return stage_table, stage_column, empty_join_record(), empty_ambiguous_record(cascade_config)
 
 
 def _empty_result(
@@ -86,10 +74,9 @@ def run_cascade(
     cascade_config: dict[str, Any],
     jev_config: dict[str, Any],
 ) -> dict[str, Any]:
-    """Run table screening, per-table column scoring, column selection, and final filtering."""
+    """Run table screening, per-table column scoring, column selection, and result joins."""
     stage_table, stage_column, stage_join, stage_ambiguous = _empty_stages(cascade_config)
     column_threshold = stage_column["score_threshold"]
-    link_threshold = stage_join["threshold"]
 
     if not mentions:
         logger.warning("No mentions extracted; skipping all JEV stages")
@@ -105,11 +92,6 @@ def run_cascade(
         logger.warning("No candidate tables selected; skipping column stage")
         return _empty_result(stage_table, stage_column, stage_join, stage_ambiguous)
 
-    focus_tables = [item["table"] for item in selected_tables]
-    link_states = build_link_candidates(database, focus_tables)
-    stage_join["num_candidates"] = len(link_states)
-    stage_join["candidates"] = list(link_states.values())
-
     column_result = run_column_stage(
         question,
         evidence,
@@ -117,17 +99,13 @@ def run_cascade(
         mentions,
         database,
         selected_tables,
-        link_states,
         cascade_config,
         jev_config,
     )
-    column_answers, join_answers = _split_answers(column_result["answers"])
     stage_column = column_result["record"]
-    stage_column["answers"] = column_answers
     stage_column["select_mode"] = str(cascade_config.get("column_select_mode", "hard")).lower()
-    stage_join["answers"] = join_answers
 
-    scored = collect_column_scores(mentions, column_result["column_states"], column_answers)
+    scored = collect_column_scores(mentions, column_result["column_states"], column_result["answers"])
     mode = stage_column["select_mode"]
     if mode == "ambiguous":
         high = float(cascade_config.get("column_select_high", 2.5))
@@ -157,26 +135,30 @@ def run_cascade(
         chosen = selected
         mention_floor = column_threshold
 
-    final = finalize_selected(
-        mentions,
-        chosen,
-        column_result["column_states"],
-        link_states,
-        join_answers,
-        link_threshold,
-        mention_floor,
-    )
-    stage_join["selected_links"] = final["selected_links"]
+    final = finalize_selected(mentions, chosen, mention_floor)
 
+    join_result = run_result_join_stage(
+        db_id, database, final["linked_columns_union"], jev_config
+    )
+    stage_join = join_result["record"]
+    union, num_added = add_join_columns(final["linked_columns_union"], join_result["chosen"])
+    stage_join["num_added"] = num_added
+
+    linked_tables = sorted({item["table"] for item in union})
     logger.info(
-        "Cascade done in %.1fs: %d tables, %d columns (ambiguous %d/%d accepted), %d joins, %d unique columns",
-        stage_table["elapsed_seconds"] + stage_column["elapsed_seconds"] + stage_ambiguous["elapsed_seconds"],
-        len(final["linked_tables"]),
+        "Cascade done in %.1fs: %d tables, %d columns (ambiguous %d/%d accepted), "
+        "%d pairs, %d join columns added, %d unique columns",
+        stage_table["elapsed_seconds"]
+        + stage_column["elapsed_seconds"]
+        + stage_ambiguous["elapsed_seconds"]
+        + stage_join["elapsed_seconds"],
+        len(linked_tables),
         sum(len(item["columns"]) for item in final["linked_columns"]),
         stage_ambiguous["num_accepted"],
         stage_ambiguous["num_ambiguous"],
-        len(final["selected_links"]),
-        len(final["linked_columns_union"]),
+        stage_join["num_pairs"],
+        num_added,
+        len(union),
     )
     logger.debug("Linked columns: %s", json.dumps(final["linked_columns"], ensure_ascii=False))
     return {
@@ -184,5 +166,7 @@ def run_cascade(
         "stage_column": stage_column,
         "stage_join": stage_join,
         "stage_ambiguous": stage_ambiguous,
-        **final,
+        "linked_columns": final["linked_columns"],
+        "linked_columns_union": union,
+        "linked_tables": linked_tables,
     }

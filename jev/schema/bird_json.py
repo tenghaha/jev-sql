@@ -110,12 +110,17 @@ def build_adjacency(entry: dict[str, Any]) -> dict[int, dict[int, list[list[str]
     return adjacency
 
 
-def build_database(entry: dict[str, Any], db_path: Path) -> dict[str, Any]:
+def build_database(
+    entry: dict[str, Any],
+    db_path: Path,
+    include_adjacent_tables: bool = True,
+) -> dict[str, Any]:
     table_names = entry["table_names_original"]
     column_names = entry["column_names_original"]
     column_types = entry["column_types"]
     primary_keys = build_primary_keys(entry)
-    adjacency = build_adjacency(entry)
+    # Adjacency carries inter-table information (neighbor tables and foreign keys).
+    adjacency = build_adjacency(entry) if include_adjacent_tables else {}
 
     conn = sqlite3.connect(f"{db_path.as_uri()}?mode=ro", uri=True)
     try:
@@ -137,7 +142,7 @@ def build_database(entry: dict[str, Any], db_path: Path) -> dict[str, Any]:
                 )
             adjacent_tables = [
                 {"table": table_names[neighbor], "foreign_keys": pairs}
-                for neighbor, pairs in sorted(adjacency[table_index].items())
+                for neighbor, pairs in sorted(adjacency.get(table_index, {}).items())
             ]
             tables.append(
                 {
@@ -156,6 +161,8 @@ def build_database(entry: dict[str, Any], db_path: Path) -> dict[str, Any]:
 def build_dataset(config: dict[str, Any]) -> dict[str, Any]:
     entries = json.loads(Path(config["tables_json"]).read_text(encoding="utf-8"))
     selected = set(config["db_ids"])
+    # false produces a schema without any inter-table information.
+    include_adjacent_tables = bool(config.get("include_adjacent_tables", True))
     databases = []
     for entry in entries:
         db_id = entry["db_id"]
@@ -165,11 +172,12 @@ def build_dataset(config: dict[str, Any]) -> dict[str, Any]:
         if not db_path.exists():
             print(f"[skip] database not found: {db_path}")
             continue
-        databases.append(build_database(entry, db_path))
+        databases.append(build_database(entry, db_path, include_adjacent_tables))
         print(f"[done] {db_id}: {len(databases[-1]['tables'])} tables")
     return {
         "dataset": config["dataset"],
         "split": config["split"],
+        "include_adjacent_tables": include_adjacent_tables,
         "databases": databases,
     }
 

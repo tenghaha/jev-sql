@@ -1,126 +1,127 @@
-"""Candidate join links taken from the generated gold schema.
+"""Step 3 candidates: result-table pairs and their join columns.
 
-Links come from each table's ``adjacent_tables`` in the schema JSON.
-The gold SQL is intentionally not used.
+Pairs are the unordered combinations of the tables that already hold a selected
+column. The join column of each pair is chosen by JEV choice questions from the
+two table schemas, so neither the generated schema's inter-table information nor
+the gold SQL is used to propose or select a join.
 """
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
-from .candidates import noul_probability
-
-logger = logging.getLogger(__name__)
-
-
-def link_question_id(link_id: str) -> str:
-    return f"j_{link_id}"
+CHOICE_ANSWER_KEYS = ("choice", "answer", "selected", "option", "column")
+PROBABILITY_KEY = "probabilities"
 
 
-def _split_pair(pair: str) -> tuple[str, str]:
-    table, column = pair.rsplit(".", 1)
-    return table, column
+def pair_id(index: int) -> str:
+    return f"p{index}"
 
 
-def build_link_candidates(
-    database: dict[str, Any],
-    focus_tables: list[str],
-) -> dict[str, dict[str, Any]]:
-    """Return foreign-key links between focus tables, canonicalized to schema names."""
-    table_map = {table["name"].casefold(): table for table in database["tables"]}
-    focus = {name.casefold() for name in focus_tables}
-    pairs: dict[tuple[str, str, str, str], tuple[str, str, str, str]] = {}
+def choice_question_id(pair: str, side: str) -> str:
+    return f"c3_{pair}_{side}"
 
-    for table in database["tables"]:
-        if table["name"].casefold() not in focus:
+
+def result_tables(columns: list[dict[str, Any]]) -> list[str]:
+    """Tables holding at least one selected column, in first-appearance order."""
+    tables = []
+    seen = set()
+    for item in columns:
+        key = item["table"].casefold()
+        if key in seen:
             continue
-        for adjacent in table.get("adjacent_tables") or []:
-            for child_pair, parent_pair in adjacent.get("foreign_keys") or []:
-                child_table, child_column = _split_pair(child_pair)
-                parent_table, parent_column = _split_pair(parent_pair)
-                key = (
-                    child_table.casefold(),
-                    child_column.casefold(),
-                    parent_table.casefold(),
-                    parent_column.casefold(),
-                )
-                if key in pairs or key[0] == key[2]:
-                    continue
-                if key[0] not in focus or key[2] not in focus:
-                    continue
-                if key[0] not in table_map or key[2] not in table_map:
-                    continue
-                child_canonical = _canonical_column(table_map[key[0]], child_column)
-                parent_canonical = _canonical_column(table_map[key[2]], parent_column)
-                if child_canonical is None or parent_canonical is None:
-                    continue
-                pairs[key] = (
-                    table_map[key[0]]["name"],
-                    child_canonical,
-                    table_map[key[2]]["name"],
-                    parent_canonical,
-                )
-
-    candidates: dict[str, dict[str, Any]] = {}
-    for key in sorted(pairs):
-        child_table, child_column, parent_table, parent_column = pairs[key]
-        link_id = f"l{len(candidates) + 1}"
-        candidates[link_id] = {
-            "link_id": link_id,
-            "child_table": child_table,
-            "child_column": child_column,
-            "parent_table": parent_table,
-            "parent_column": parent_column,
-        }
-
-    if candidates:
-        logger.info(
-            "Join candidates among %d focus tables: %d links", len(focus_tables), len(candidates)
-        )
-    else:
-        logger.info("Join candidates among %d focus tables: none", len(focus_tables))
-    return candidates
+        seen.add(key)
+        tables.append(item["table"])
+    return tables
 
 
-def _canonical_column(table: dict[str, Any], column: str) -> str | None:
+def build_pairs(tables: list[str]) -> list[dict[str, Any]]:
+    """All unordered pairs of result tables."""
+    pairs = []
+    for index, left in enumerate(tables):
+        for right in tables[index + 1 :]:
+            pairs.append(
+                {
+                    "pair_id": pair_id(len(pairs) + 1),
+                    "left_table": left,
+                    "right_table": right,
+                }
+            )
+    return pairs
+
+
+def _normalize_choice(value: str) -> str:
+    text = value.strip().strip("`\"'")
+    if "." in text:
+        text = text.rsplit(".", 1)[-1]
+    return text.strip().strip("`\"'")
+
+
+def parse_choice(answer: Any, options: list[str]) -> str | None:
+    """Read the chosen column from a choice answer; None when unreadable."""
+    if not isinstance(answer, dict):
+        return None
+    lookup = {option.casefold(): option for option in options}
+    for key in CHOICE_ANSWER_KEYS:
+        value = answer.get(key)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, str):
+            chosen = lookup.get(_normalize_choice(value).casefold())
+            if chosen is not None:
+                return chosen
+        elif isinstance(value, (int, float)) and float(value).is_integer():
+            index = int(value)
+            if 0 <= index < len(options):
+                return options[index]
+    return _highest_probability(answer.get(PROBABILITY_KEY), lookup)
+
+
+def _highest_probability(probabilities: Any, lookup: dict[str, str]) -> str | None:
+    """Fall back to the most probable option when no explicit choice is given."""
+    if not isinstance(probabilities, dict):
+        return None
+    best_option = None
+    best_value = None
+    for name, value in probabilities.items():
+        option = lookup.get(str(name).casefold())
+        if option is None or isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        if best_value is None or value > best_value:
+            best_option, best_value = option, value
+    return best_option
+
+
+def collect_chosen_columns(
+    database: dict[str, Any],
+    pairs: list[dict[str, Any]],
+    answers: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Resolve both directions of every pair into the chosen join columns."""
+    table_map = {table["name"].casefold(): table for table in database["tables"]}
+    chosen = []
+    for pair in pairs:
+        for side, table_name in (("a", pair["left_table"]), ("b", pair["right_table"])):
+            table = table_map.get(table_name.casefold())
+            if table is None:
+                continue
+            options = [column["name"] for column in table["columns"]]
+            column = parse_choice(answers.get(choice_question_id(pair["pair_id"], side)), options)
+            if column is None:
+                continue
+            chosen.append(
+                {
+                    "pair_id": pair["pair_id"],
+                    "table": table["name"],
+                    "column": column,
+                    "dtype": _column_type(table, column),
+                }
+            )
+    return chosen
+
+
+def _column_type(table: dict[str, Any], column: str) -> str | None:
     for item in table["columns"]:
         if item["name"].casefold() == column.casefold():
-            return item["name"]
+            return item["type"]
     return None
-
-
-def links_for_table(
-    link_states: dict[str, dict[str, Any]],
-    table_name: str,
-) -> dict[str, dict[str, Any]]:
-    """Links where `table_name` takes part, annotated with the other side."""
-    table_key = table_name.casefold()
-    rows = {}
-    for link_id, link in link_states.items():
-        child_key = link["child_table"].casefold()
-        parent_key = link["parent_table"].casefold()
-        if child_key == table_key:
-            other = link["parent_table"]
-        elif parent_key == table_key:
-            other = link["child_table"]
-        else:
-            continue
-        rows[link_id] = {**link, "other_table": other}
-    return rows
-
-
-def select_links(
-    link_states: dict[str, dict[str, Any]],
-    answers: dict[str, Any],
-    threshold: float,
-) -> list[dict[str, Any]]:
-    """Keep join links whose Noul probability reaches the threshold."""
-    rows = []
-    for link_id, link in link_states.items():
-        noul = noul_probability(answers.get(link_question_id(link_id)))
-        if noul < threshold:
-            continue
-        rows.append({**link, "noul": round(noul, 4)})
-    rows.sort(key=lambda row: (-row["noul"], row["link_id"]))
-    return rows

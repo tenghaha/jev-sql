@@ -7,9 +7,10 @@ Usage:
 
 Config fields:
     dataset, split, schema_path, questions_path, databases_dir, output_dir
+    mentions: enabled
     mention_llm: model_env / api_key_env / base_url_env
     cascade: table_candidates / table_noul_threshold / table_column_batch
-             score_scale / column_score_threshold / fk_noul_threshold
+             score_scale / column_select_mode / column_score_threshold
     jev: model / endpoint_env / api_key_env / timeout
 
 Output:
@@ -62,12 +63,13 @@ def main() -> int:
     for mention in result["mentions"]:
         logger.info("  %s [%s] %s", mention["span_id"], mention["span_type"], mention["text"])
     logger.info(
-        "Tables: %d/%d kept; columns: %d score questions; joins: %d/%d kept; linked columns: %d unique",
+        "Tables: %d/%d kept; columns: %d score questions; result joins: %d pairs, %d chosen; "
+        "linked columns: %d unique",
         len(result["stage_table"]["selected_tables"]),
         result["stage_table"]["num_candidates"],
         result["stage_column"]["num_questions"],
-        len(result["stage_join"]["selected_links"]),
-        result["stage_join"]["num_candidates"],
+        result["stage_join"]["num_pairs"],
+        len(result["stage_join"]["chosen_columns"]),
         len(result["linked_columns_union"]),
     )
     logger.debug("Linked columns: %s", json.dumps(result["linked_columns"], ensure_ascii=False))
@@ -77,7 +79,7 @@ def main() -> int:
             "question_id": result["question_id"],
             "db_id": result["db_id"],
             "selected_tables": result["stage_table"]["selected_tables"],
-            "selected_joins": result["stage_join"]["selected_links"],
+            "result_join_columns": result["stage_join"]["chosen_columns"],
             "linked_columns": result["linked_columns"],
             "linked_columns_union": result["linked_columns_union"],
             "elapsed_seconds": round(result["elapsed"]["total_seconds"], 2),

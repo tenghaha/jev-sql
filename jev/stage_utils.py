@@ -17,7 +17,7 @@ def merge_usage(target: dict[str, Any], usage: Any) -> None:
 
 
 def merge_noul_answers(target: dict[str, Any], incoming: dict[str, Any]) -> None:
-    """Merge answers; for duplicate join questions keep the higher Noul probability."""
+    """Merge answers; for duplicate question ids keep the higher Noul probability."""
     for key, answer in incoming.items():
         if key not in target or noul_probability(answer) > noul_probability(target[key]):
             target[key] = answer
