@@ -244,6 +244,7 @@ def evaluate_schema_linking(
                 "column_f1": column_f1,
                 "table_exact_match": table_em,
                 "column_exact_match": column_em,
+                "strict_column_recall": int(column_fn == 0),
                 "exact_match": table_em and column_em,
             }
         )
@@ -339,6 +340,11 @@ def evaluate_schema_linking(
             if evaluated_count
             else None
         ),
+        "srr": (
+            sum(int(sample["strict_column_recall"]) for sample in evaluated) / evaluated_count
+            if evaluated_count
+            else None
+        ),
         "by_database": database_rows,
     }
     return {"summary": summary, "samples": samples}
@@ -363,6 +369,7 @@ def format_summary(result: dict[str, Any]) -> str:
         f"EM: {_format_metric(summary['exact_match'])}",
         f"Table EM: {_format_metric(summary['table_exact_match'])} | "
         f"Column EM: {_format_metric(summary['column_exact_match'])}",
+        f"Column SRR: {_format_metric(summary['srr'])}",
     ]
     return "\n".join(lines)
 
@@ -408,12 +415,14 @@ def write_report(
         f"| EM (table + column exact) | {_format_metric(summary['exact_match'])} |",
         f"| Table EM | {_format_metric(summary['table_exact_match'])} |",
         f"| Column EM | {_format_metric(summary['column_exact_match'])} |",
+        f"| SRR (strict column recall) | {_format_metric(summary['srr'])} |",
         "",
         "## Definitions",
         "",
         "- Table P/R: set of tables read by the gold SQL vs predicted tables.",
         "- Column P/R: table-qualified columns read by the gold SQL vs predicted columns.",
         "- EM: 1 only when both the table set and the column set exactly match the gold SQL.",
+        "- SRR (strict column recall): 1 when every gold column is recalled (extra predicted columns allowed), else 0; averaged over evaluated samples.",
         "- Micro precision/recall aggregate TP/FP/FN over all evaluated samples.",
         "",
         "## Per Database",
