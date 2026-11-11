@@ -77,14 +77,12 @@ def run_question(
         "linked_columns_union": cascade_result["linked_columns_union"],
         "linked_tables": cascade_result["linked_tables"],
         "usage": {
-            "table": cascade_result["stage_table"].get("usage"),
             "column": cascade_result["stage_column"].get("usage"),
             "ambiguous": cascade_result["stage_ambiguous"].get("usage"),
             "result_join": cascade_result["stage_join"].get("usage"),
         },
         "elapsed": {
             "mentions_seconds": mention_elapsed,
-            "table_seconds": cascade_result["stage_table"]["elapsed_seconds"],
             "column_seconds": cascade_result["stage_column"]["elapsed_seconds"],
             "ambiguous_seconds": cascade_result["stage_ambiguous"]["elapsed_seconds"],
             "result_join_seconds": cascade_result["stage_join"]["elapsed_seconds"],

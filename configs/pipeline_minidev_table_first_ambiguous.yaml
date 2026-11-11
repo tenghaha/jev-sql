@@ -20,8 +20,6 @@ mention_llm:
   max_retries: 2
 
 cascade:
-  table_candidates: 5  # k: candidate tables kept by table-level Noul screening
-  table_noul_threshold: 0.5  # keep tables with Noul >= this probability; 0 disables filtering
   table_column_batch: 0  # columns per JEV call in step 2; 0 = all columns of the table
   score_scale: [irrelevant, weak, relevant, strong]
   column_select_mode: ambiguous  # hard: single threshold; ambiguous: extra JEV round

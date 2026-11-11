@@ -1,4 +1,4 @@
-"""Run the table-first JEV schema-linking pipeline over a BIRD split.
+"""Run the JEV schema-linking pipeline (all tables scored) over a BIRD split.
 
 Usage:
     conda run -n znws python scripts/run_batch.py --config configs/pipeline_minidev_table_first.yaml
@@ -10,8 +10,7 @@ Config fields:
     dataset, split, schema_path, questions_path, databases_dir, output_dir
     mentions: enabled
     mention_llm: model_env / api_key_env / base_url_env
-    cascade: table_candidates / table_noul_threshold / table_column_batch
-             score_scale / column_select_mode / column_score_threshold
+    cascade: table_column_batch / score_scale / column_select_mode / column_score_threshold
     jev: model / endpoint_env / api_key_env / timeout
 
 Output:
@@ -106,7 +105,7 @@ def main() -> int:
             result["status"] = "ok"
             success += 1
             logger.info(
-                "[%d/%d] qid=%s db=%s status=ok spans=%d tables=%d/%d columns_q=%d "
+                "[%d/%d] qid=%s db=%s status=ok spans=%d tables=%d columns_q=%d "
                 "pairs=%d join_cols=%d linked=%d elapsed=%.1fs",
                 index + 1,
                 len(questions),
@@ -114,7 +113,6 @@ def main() -> int:
                 result["db_id"],
                 len(result["mentions"]),
                 len(result["stage_table"]["selected_tables"]),
-                result["stage_table"]["num_candidates"],
                 result["stage_column"]["num_questions"],
                 result["stage_join"]["num_pairs"],
                 len(result["stage_join"]["chosen_columns"]),

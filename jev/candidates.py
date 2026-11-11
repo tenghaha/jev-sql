@@ -1,7 +1,6 @@
 """Shared JEV answer parsing and compact schema rendering.
 
-Stage-specific candidate logic lives in table_candidates.py, column_candidates.py
-and fk_candidates.py.
+Stage-specific candidate logic lives in column_candidates.py and fk_candidates.py.
 """
 
 from __future__ import annotations

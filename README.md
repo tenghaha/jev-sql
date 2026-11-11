@@ -11,8 +11,6 @@ jev/                         核心库
   schema/bird_json.py        从 BIRD 元数据与 SQLite 构建结构化 schema
   mentions.py                一次生成式 LLM 调用抽取全部 mention
   candidates.py              JEV 答案解析、紧凑 schema 等共享原语
-  table_candidates.py        步骤 1：表级候选与 Noul 排序
-  table_stage.py             步骤 1：构建请求、提交、选表
   fk_candidates.py           步骤 3：结果表配对、连接列解析
   column_candidates.py       步骤 2：列候选、Score 过滤
   column_stage.py            步骤 2：按表提交列打分
@@ -65,7 +63,7 @@ schema 构建 → 单题/批量推理 → schema linking 评测 → 错误分析
 
 ## 配置
 
-当前分支（`dev_tc`，先表后列）使用 [configs/pipeline_minidev_table_first.yaml](configs/pipeline_minidev_table_first.yaml)：
+当前流水线（全表列打分）以 [configs/pipeline_minidev_all_tables.yaml](configs/pipeline_minidev_all_tables.yaml) 为例：
 
 | 字段 | 说明 |
 |---|---|
@@ -75,8 +73,6 @@ schema 构建 → 单题/批量推理 → schema linking 评测 → 错误分析
 | `databases_dir` | SQLite 根目录，供评测探查 GT 结构 |
 | `output_dir` | 本组实验产物根目录 |
 | `mention_llm.*` | 生成式 LLM 的环境变量名、温度、超时 |
-| `cascade.table_candidates` | 步骤 1 最多保留的候选表数 |
-| `cascade.table_noul_threshold` | 表级 Noul 阈值，`0` 表示只按 top-k 截断 |
 | `cascade.table_column_batch` | 步骤 2 每个请求的列数，`0` 表示整表一次提交 |
 | `cascade.score_scale` | 列 Score 等级 |
 | `cascade.column_score_threshold` | 列 Score 阈值（`hard` 模式） |
@@ -226,15 +222,14 @@ conda run -n znws python scripts/evaluate_ex.py --config configs/pipeline_minide
 
 ## 机制说明
 
-本分支（`dev_tc`）采用**先表后列**：
+当前流水线采用**全表列打分**（已取消表级选表步骤）：
 
-1. 表级 Noul：用紧凑表 schema 判断每张表是否需要；
-2. 按表打分：每个候选表单独提交，做 mention × 列 Score；
-3. 列筛选：`hard` 模式按单阈值，`ambiguous` 模式按双阈值并对模糊列追加一轮 Noul；
-4. 结果表连接补全：对含结果列的表两两配对，用两个 choice 问题分别判断两侧最可能的连接列，把结果加入列集合并去重。
+1. 全表列打分：数据库中每张表都单独提交，做 mention × 列 Score；
+2. 列筛选：`hard` 模式按单阈值，`ambiguous` 模式按双阈值并对模糊列追加一轮 Noul；
+3. 结果表连接补全：对含结果列的表两两配对，用两个 choice 问题分别判断两侧最可能的连接列，把结果加入列集合并去重。
 
 连接列由 JEV 依据两张表的 schema 判定，不使用 schema 中的表间信息，也不使用 gold SQL。
 
-详细说明见 [docs/jev_schema_linking_table_first.md](docs/jev_schema_linking_table_first.md)。
+详细说明见 [docs/jev_schema_linking_all_tables.md](docs/jev_schema_linking_all_tables.md)。
 
 另一分支 `dev_2step` 保留列优先的两阶段级联机制：全列 Noul 粗筛后，对候选列做 mention × 列 Score 并按阈值过滤，说明见该分支的 `docs/jev_schema_linking.md`。

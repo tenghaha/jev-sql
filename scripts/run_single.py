@@ -1,4 +1,4 @@
-"""Run the table-first JEV schema-linking pipeline for one BIRD question.
+"""Run the JEV schema-linking pipeline (all tables scored) for one BIRD question.
 
 Usage:
     conda run -n znws python scripts/run_single.py --config configs/pipeline_minidev_table_first.yaml --question-id 1471
@@ -9,8 +9,7 @@ Config fields:
     dataset, split, schema_path, questions_path, databases_dir, output_dir
     mentions: enabled
     mention_llm: model_env / api_key_env / base_url_env
-    cascade: table_candidates / table_noul_threshold / table_column_batch
-             score_scale / column_select_mode / column_score_threshold
+    cascade: table_column_batch / score_scale / column_select_mode / column_score_threshold
     jev: model / endpoint_env / api_key_env / timeout
 
 Output:
@@ -63,10 +62,9 @@ def main() -> int:
     for mention in result["mentions"]:
         logger.info("  %s [%s] %s", mention["span_id"], mention["span_type"], mention["text"])
     logger.info(
-        "Tables: %d/%d kept; columns: %d score questions; result joins: %d pairs, %d chosen; "
+        "Tables: %d scored (all); columns: %d score questions; result joins: %d pairs, %d chosen; "
         "linked columns: %d unique",
         len(result["stage_table"]["selected_tables"]),
-        result["stage_table"]["num_candidates"],
         result["stage_column"]["num_questions"],
         result["stage_join"]["num_pairs"],
         len(result["stage_join"]["chosen_columns"]),

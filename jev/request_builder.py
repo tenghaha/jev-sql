@@ -1,4 +1,4 @@
-"""Build JEV states and questions for the table-first cascade."""
+"""Build JEV states and questions for the JEV cascade."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from typing import Any
 from .candidates import schema_summary
 from .column_candidates import column_question_id
 from .fk_candidates import choice_question_id
-from .table_candidates import table_question_id
 
 DEFAULT_SCORE_SCALE = ["irrelevant", "weak", "relevant", "strong"]
 
@@ -26,39 +25,6 @@ def _context(
         "evidence_spans": mentions,
         "schema_summary": schema_summary(database),
     }
-
-
-def build_table_request(
-    question: str,
-    evidence: str,
-    db_id: str,
-    mentions: list[dict[str, str]],
-    database: dict[str, Any],
-    candidate_states: dict[str, dict[str, Any]],
-) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
-    """Build one Noul question per table, with mentions in shared context."""
-    questions = {}
-    for table_id, candidate in candidate_states.items():
-        questions[table_question_id(table_id)] = {
-            "type": "noul",
-            "instructions": (
-                f"Is the database table {candidate['table_name']} needed to answer the question, "
-                "given its evidence spans and column list?"
-            ),
-        }
-
-    state = {
-        "task": "table_linking",
-        "instruction": (
-            "Decide whether each candidate table is needed to answer the question. Each candidate "
-            "is a database table with its primary key and columns. Use the evidence spans as the "
-            "natural-language mentions. Answer only the provided questions."
-        ),
-        "context": _context(question, evidence, db_id, mentions, database),
-        "candidates": candidate_states,
-        "output_schema": {"noul": "probability in [0, 1]"},
-    }
-    return state, questions
 
 
 def ambiguous_question_id(candidate_id: str) -> str:

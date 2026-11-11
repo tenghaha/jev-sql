@@ -1,4 +1,4 @@
-"""Table-first cascade: table Noul, per-table column scoring, column selection, result joins."""
+"""All-tables cascade: per-table column scoring for every table, column selection, result joins."""
 
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ from .finalize import add_join_columns, classify_columns, finalize_selected
 from .request_builder import DEFAULT_SCORE_SCALE
 from .result_join_stage import empty_record as empty_join_record
 from .result_join_stage import run_result_join_stage
-from .table_stage import run_table_stage
 
 logger = logging.getLogger(__name__)
 
@@ -23,16 +22,8 @@ def _empty_stages(
     cascade_config: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     stage_table = {
-        "num_candidates": 0,
-        "num_questions": 0,
-        "selection": {
-            "limit": int(cascade_config.get("table_candidates", 5)),
-            "noul_threshold": float(cascade_config.get("table_noul_threshold", 0.5)),
-        },
-        "candidates": [],
+        "num_tables": 0,
         "selected_tables": [],
-        "elapsed_seconds": 0.0,
-        "usage": None,
     }
     stage_column = {
         "score_scale": list(cascade_config.get("score_scale", DEFAULT_SCORE_SCALE)),
@@ -65,6 +56,14 @@ def _empty_result(
     }
 
 
+def _all_tables(database: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every table becomes a scored table; ids follow schema order (t1..tN)."""
+    return [
+        {"table_id": f"t{index}", "table": table["name"]}
+        for index, table in enumerate(database["tables"], start=1)
+    ]
+
+
 def run_cascade(
     question: str,
     evidence: str,
@@ -74,7 +73,7 @@ def run_cascade(
     cascade_config: dict[str, Any],
     jev_config: dict[str, Any],
 ) -> dict[str, Any]:
-    """Run table screening, per-table column scoring, column selection, and result joins."""
+    """Score columns for every table, select columns, and complete result joins."""
     stage_table, stage_column, stage_join, stage_ambiguous = _empty_stages(cascade_config)
     column_threshold = stage_column["score_threshold"]
 
@@ -82,15 +81,13 @@ def run_cascade(
         logger.warning("No mentions extracted; skipping all JEV stages")
         return _empty_result(stage_table, stage_column, stage_join, stage_ambiguous)
 
-    table_result = run_table_stage(
-        question, evidence, db_id, mentions, database, cascade_config, jev_config
+    selected_tables = _all_tables(database)
+    stage_table = {"num_tables": len(selected_tables), "selected_tables": selected_tables}
+    logger.info(
+        "Stage 2 (columns): scoring all %d tables: %s",
+        len(selected_tables),
+        [item["table"] for item in selected_tables],
     )
-    stage_table = table_result["record"]
-    selected_tables = stage_table["selected_tables"]
-
-    if not selected_tables:
-        logger.warning("No candidate tables selected; skipping column stage")
-        return _empty_result(stage_table, stage_column, stage_join, stage_ambiguous)
 
     column_result = run_column_stage(
         question,
@@ -148,8 +145,7 @@ def run_cascade(
     logger.info(
         "Cascade done in %.1fs: %d tables, %d columns (ambiguous %d/%d accepted), "
         "%d pairs, %d join columns added, %d unique columns",
-        stage_table["elapsed_seconds"]
-        + stage_column["elapsed_seconds"]
+        stage_column["elapsed_seconds"]
         + stage_ambiguous["elapsed_seconds"]
         + stage_join["elapsed_seconds"],
         len(linked_tables),
