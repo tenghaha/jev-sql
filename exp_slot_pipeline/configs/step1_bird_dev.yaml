@@ -1,0 +1,40 @@
+# Step-1 ablation: zero-shot LLM slot-AST templates -> JEV slot filling -> SQL.
+#
+# The LLM only sees table cards (stage-1 summaries) and never column lists; JEV
+# gets the table cards for table slots and the column-level schema for column
+# slots. Paths are relative to the repo root; output_dir to this experiment.
+dataset: BIRD
+split: dev
+db_summary_path: exp_db_summary/outputs/db_summary/bird_dev.json
+schema_path: exp_db_summary/outputs/schema/bird_dev.json
+questions_path: BIRD/dev_20240627/dev.json
+databases_dir: BIRD/dev_20240627/dev_databases
+output_dir: outputs/runs/step1_bird_dev
+
+# Two candidate templates per question, zero-shot: one simple, one complex.
+templates:
+  simple_rounds: 2     # retries allowed for the simple template
+  complex_rounds: 3    # the complex template may be built over several rounds
+
+template_llm:
+  # .env points at deepseek-flash, a reasoning model: on this prompt it spends
+  # the whole completion budget on reasoning tokens and returns empty content.
+  # deepseek-chat answers the same prompt with plain JSON in ~3 s.
+  model: deepseek-chat
+  model_env: OPENAI_API_MODEL
+  base_url_env: OPENAI_API_BASE
+  api_key_env: OPENAI_API_KEY
+  temperature: 0.0
+  max_tokens: 2000
+  timeout: 180
+
+jev:
+  model: typesafe-ai/jev
+  endpoint_env: JEV_API_BASE
+  api_key_env: AI_GATEWAY_API_KEY
+  timeout: 45      # a noul call takes ~20 s; fail fast on a stuck gateway
+  retries: 2
+
+fill:
+  noul_threshold: 0.5   # JEV noul >= this keeps the candidate for that slot
+  max_rows: 1000        # execution check only reads this many rows

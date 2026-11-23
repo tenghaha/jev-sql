@@ -20,6 +20,13 @@
 
 ## 快速开始
 
+```bat
+cd D:\JEV\exp_ast_slot
+scripts\run_all.cmd C:\ProgramData\miniconda3\python.exe                # 全量重建（parse/roles/3 项校验）
+```
+
+或逐步执行：
+
 ```powershell
 cd D:\JEV\exp_ast_slot
 python -m sqlast.cli parse --config configs/datasets.yaml                 # AST 集，约 12 s

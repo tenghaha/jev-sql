@@ -1,0 +1,25 @@
+﻿# Offline database summary -- Spider2.0 local SQLite databases (30 databases).
+# The datasets ship as a zip; each .sqlite is extracted once into cache_dir and
+# reused afterwards (no dataset file is modified).
+dataset: Spider2.0
+split: lite-local
+db_backend: sqlite_zip
+db_zip: Spider2/spider2-lite/resource/databases/spider2-localdb/local_sqlite.zip
+summarizer: llm
+output_path: outputs/db_summary/spider2_lite_local.json
+schema_output_path: outputs/schema/spider2_lite_local.json
+cache_dir: outputs/cache/spider2_lite_local
+
+# Full-schema sampling: one bounded SELECT * per table
+schema_sample_rows: 200
+
+# Compression knobs
+summary_max_chars: 160
+summary_max_words: 18
+sample_rows: 2
+sample_values: 3
+
+# Full run is allowed for this stage; 0 = no cap on uncached calls
+llm_max_tables: 0
+llm_max_tokens: 600
+llm_concurrency: 12

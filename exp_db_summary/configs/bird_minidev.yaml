@@ -1,0 +1,25 @@
+﻿# Offline database summary -- BIRD MINIDEV (11 databases, same as dev)
+dataset: BIRD
+split: MINIDEV
+db_backend: sqlite_dir
+tables_json: BIRD/MINIDEV/dev_tables.json
+databases_dir: BIRD/MINIDEV/dev_databases
+db_pattern: "*/*.sqlite"
+summarizer: llm
+output_path: outputs/db_summary/bird_minidev.json
+schema_output_path: outputs/schema/bird_minidev.json
+cache_dir: outputs/cache/bird
+
+# Full-schema sampling: one bounded SELECT * per table
+schema_sample_rows: 200
+
+# Compression knobs
+summary_max_chars: 160
+summary_max_words: 18
+sample_rows: 2
+sample_values: 3
+
+# Full run is allowed for this stage; 0 = no cap on uncached calls
+llm_max_tables: 0
+llm_max_tokens: 600
+llm_concurrency: 12
