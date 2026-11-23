@@ -1,0 +1,60 @@
+# Dataset/split definitions for the AST + semantic-slot pipeline.
+# Paths are relative to `repo_root`, which itself is relative to this file's
+# parent directory (exp_ast_slot).  One entry == one AST set on disk.
+repo_root: ".."
+out_dir: "outputs"
+
+splits:
+  - name: bird_dev
+    kind: bird_json
+    path: BIRD/dev_20240627/dev.json
+    tables: BIRD/dev_20240627/dev_tables.json
+    dialect: sqlite
+
+  - name: bird_train
+    kind: bird_json
+    path: BIRD/train/train.json
+    tables: BIRD/train/train_tables.json
+    dialect: sqlite
+
+  - name: bird_minidev_sqlite
+    kind: bird_json
+    path: BIRD/MINIDEV/mini_dev_sqlite.json
+    tables: BIRD/MINIDEV/dev_tables.json
+    dialect: sqlite
+
+  - name: bird_minidev_mysql
+    kind: bird_json
+    path: BIRD/MINIDEV/mini_dev_mysql.json
+    tables: BIRD/MINIDEV/dev_tables.json
+    dialect: mysql
+
+  - name: bird_minidev_postgresql
+    kind: bird_json
+    path: BIRD/MINIDEV/mini_dev_postgresql.json
+    tables: BIRD/MINIDEV/dev_tables.json
+    dialect: postgres
+
+  # Spider2 gold SQL: one .sql file per instance.  spider2-lite mixes dialects,
+  # decided by the instance-id prefix.
+  - name: spider2_lite
+    kind: spider2_dir
+    sql_dir: Spider2/spider2-lite/evaluation_suite/gold/sql
+    questions: Spider2/spider2-lite/spider2-lite.jsonl
+    question_key: question
+    dialect: bigquery
+    dialect_by_prefix:
+      bq: bigquery
+      ga: bigquery
+      sf: snowflake
+      local: sqlite
+      lo: sqlite
+
+  - name: spider2_snow
+    kind: spider2_dir
+    sql_dir: Spider2/spider2-snow/evaluation_suite/gold/sql
+    questions: Spider2/spider2-snow/spider2-snow.jsonl
+    question_key: instruction
+    # every gold file in this suite runs on Snowflake; the sf_bq*/sf_local*
+    # prefixes only record which source suite the task came from
+    dialect: snowflake

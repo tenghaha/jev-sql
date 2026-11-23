@@ -1,0 +1,154 @@
+(* ==========================================================================
+   grammar.ebnf -- context-free grammar implemented by sqlast/parser.py
+   --------------------------------------------------------------------------
+   Notation:  [x] optional,  {x} repetition,  ( a | b ) alternative,
+              "lit" literal keyword/symbol,  lower-case = non-terminal.
+   Every production maps to one method of Parser; the rule id recorded in
+   outputs/ast/rules.json is the method's self.hit("<id>") label.
+   Expression precedence is NOT encoded here: it is data in
+   parser.BINDING_POWER and applied by Pratt parsing (see docs/02-parser.md).
+   ========================================================================== *)
+
+script          ::= { ";" | statement } [ ";" ]
+
+statement       ::= declare | set_var | create_function | query_expr
+
+declare         ::= "DECLARE" name [ type ] [ "DEFAULT" expr ]
+set_var         ::= "SET" name "=" expr
+
+create_function ::= "CREATE" [ "OR" "REPLACE" ] [ "TEMP" | "TEMPORARY" ]
+                    "FUNCTION" name "(" [ param { "," param } ] ")"
+                    [ "RETURNS" type ] [ "AS" "(" expr ")" ]
+param           ::= name type
+
+(* ---------------------------------------------------------------- queries *)
+query_expr      ::= [ with_clause ] set_expr [ order_by ] [ limit_offset ]
+
+with_clause     ::= "WITH" [ "RECURSIVE" ] cte { "," cte }
+cte             ::= name [ "(" name { "," name } ")" ] "AS"
+                    [ "NOT" ] [ "MATERIALIZED" ] "(" query_expr ")"
+
+set_expr        ::= select_core { set_op [ "ALL" | "DISTINCT" ] select_core }
+set_op          ::= "UNION" | "INTERSECT" | "EXCEPT"
+
+select_core     ::= "(" query_expr ")"
+                  | "VALUES" row { "," row }
+                  | select
+row             ::= "(" expr { "," expr } ")" | expr
+
+select          ::= "SELECT" [ "DISTINCT" [ "ON" "(" expr { "," expr } ")" ]
+                               | "ALL" ]
+                    [ "AS" ( "STRUCT" | "VALUE" ) ]
+                    select_item { "," select_item }
+                    [ "FROM" from_item { "," from_item } ]
+                    [ "WHERE" expr ]
+                    [ "GROUP" "BY" [ "ALL" | "DISTINCT" ] expr { "," expr } ]
+                    [ "HAVING" expr ]
+                    [ "QUALIFY" expr ]
+                    [ window_clause ]
+
+select_item     ::= "*" star_modifiers
+                  | qualifier "." "*" star_modifiers
+                  | expr [ [ "AS" ] alias ]
+star_modifiers  ::= [ ( "EXCEPT" | "EXCLUDE" ) "(" name { "," name } ")" ]
+                    [ "REPLACE" "(" expr "AS" name { "," expr "AS" name } ")" ]
+alias           ::= name | qname | string
+
+window_clause   ::= "WINDOW" name "AS" "(" window_spec ")"
+                    { "," name "AS" "(" window_spec ")" }
+
+(* ------------------------------------------------------------------- FROM *)
+from_item       ::= table_factor { join_clause }
+
+table_factor    ::= "(" query_expr ")" [ alias ] [ "(" name { "," name } ")" ]
+                  | "(" from_item ")"
+                  | [ "LATERAL" ] "UNNEST" "(" expr ")" [ with_offset ] [ alias ]
+                  | [ "LATERAL" ] table_name [ alias ]
+                  | [ "LATERAL" ] func_name "(" call_args ")" [ alias ]
+
+table_name      ::= name_or_qname { "." name_or_qname }        (* "-" allowed for
+                                                                  bigquery project ids *)
+join_clause     ::= join_words "JOIN" table_factor
+                    [ "ON" expr | "USING" "(" name { "," name } ")" ]
+join_words      ::= [ "NATURAL" | "INNER" | "CROSS" | "LEFT" | "RIGHT" | "FULL" ]
+                    [ "OUTER" ]
+                  | "STRAIGHT_JOIN"
+with_offset     ::= "WITH" "OFFSET" [ [ "AS" ] alias ]
+
+order_by        ::= "ORDER" "BY" order_item { "," order_item }
+order_item      ::= expr [ "ASC" | "DESC" ] [ "NULLS" ( "FIRST" | "LAST" ) ]
+
+limit_offset    ::= { "LIMIT" ( "ALL" | expr [ "," expr ] )        (* "," : sqlite/mysql *)
+                    | "OFFSET" expr [ "ROW" | "ROWS" ]
+                    | "FETCH" [ "FIRST" | "NEXT" ] [ expr ]
+                              ( "ROW" | "ROWS" ) [ "ONLY" | "WITH" "TIES" ] }
+
+(* ------------------------------------------------------------- expressions *)
+(* Pratt-parsed: parse_expr(min_bp) loops over the infix/postfix set while
+   binding power >= min_bp.  See parser.BINDING_POWER. *)
+expr            ::= prefix { postfix | infix }
+prefix          ::= literal
+                  | "(" query_expr ")"                       (* scalar subquery *)
+                  | "(" expr [ "," expr ] ")"                (* paren / tuple *)
+                  | ( "-" | "+" | "~" ) expr
+                  | "NOT" expr
+                  | case_expr | cast_expr | extract_expr | interval_expr
+                  | "EXISTS" "(" query_expr ")"
+                  | array_lit | struct_lit | typed_literal
+                  | parameter | current_time_fn
+                  | name_chain                                (* column or call *)
+
+infix           ::= binary_op expr
+                  | "IS" [ "NOT" ] ( "NULL" | "TRUE" | "FALSE" | "UNKNOWN" )
+                  | "IS" [ "NOT" ] "DISTINCT" "FROM" expr
+                  | "IS" [ "NOT" ] expr                        (* sqlite leniency *)
+                  | [ "NOT" ] "IN" ( "(" query_expr ")" | "(" expr { "," expr } ")" | expr )
+                  | [ "NOT" ] "BETWEEN" expr "AND" expr
+                  | [ "NOT" ] ( "LIKE" | "ILIKE" | "RLIKE" | "REGEXP" | "GLOB" ) expr
+                              [ "ESCAPE" expr ]
+
+postfix         ::= "::" type | "[" expr "]" | "." field | ":" field
+                  | "NOTNULL" | "ISNULL"                       (* sqlite/mysql *)
+                  | [ "IGNORE" | "RESPECT" ] "NULLS"
+
+binary_op       ::= "OR" | "AND" | ( "=" | "==" | "!=" | "<>" | "<" | "<=" | ">"
+                  | ">=" | "<=>" ) | "|" | "&" | "^" | "||" | "+" | "-"
+                  | "*" | "/" | "%" | "DIV" | "MOD"
+
+name_chain      ::= name_or_qname { "." ( name_or_qname | string ) }
+                  | name_chain "(" call_args ")" func_tails
+
+call_args       ::= [ "DISTINCT" | "ALL" ] [ arg { "," arg } ]
+arg             ::= "*" | expr [ "AS" name ] | name "=>" expr
+                  | expr "SEPARATOR" expr
+func_tails      ::= [ [ "IGNORE" | "RESPECT" ] "NULLS" ]
+                    [ "WITHIN" "GROUP" "(" order_by ")" ]
+                    [ "FILTER" "(" "WHERE" expr ")" ]
+                    [ "OVER" ( "(" window_spec ")" | name ) ]
+
+window_spec     ::= [ name ]
+                    [ "PARTITION" "BY" expr { "," expr } ]
+                    [ order_by ]
+                    [ ( "ROWS" | "RANGE" | "GROUPS" )
+                      ( "BETWEEN" frame_bound "AND" frame_bound | frame_bound ) ]
+frame_bound     ::= "UNBOUNDED" ( "PRECEDING" | "FOLLOWING" )
+                  | "CURRENT" "ROW"
+                  | expr ( "PRECEDING" | "FOLLOWING" )
+
+case_expr       ::= "CASE" [ expr ] { "WHEN" expr "THEN" expr } [ "ELSE" expr ] "END"
+cast_expr       ::= ( "CAST" | "TRY_CAST" | "SAFE_CAST" )
+                    "(" expr "AS" type [ "FORMAT" expr ] ")"
+extract_expr    ::= "EXTRACT" "(" date_part ( "FROM" | "," ) expr ")"
+interval_expr   ::= "INTERVAL" expr [ interval_unit ]
+array_lit       ::= "ARRAY" "[" [ expr { "," expr } ] "]" | "[" [ expr { "," expr } ] "]"
+struct_lit      ::= "STRUCT" "(" [ expr [ "AS" name ] { "," expr [ "AS" name ] } ] ")"
+typed_literal   ::= ( "DATE" | "TIME" | "TIMESTAMP" | "DATETIME" ) string
+current_time_fn ::= "CURRENT_DATE" | "CURRENT_TIME" | "CURRENT_TIMESTAMP"
+                  | "CURRENT_USER" | "LOCALTIME" | "LOCALTIMESTAMP" | "SYSDATE"
+parameter       ::= "?" | "@" name | ":" name | "$" name
+
+type            ::= name [ "(" number { "," number } ")" ]
+                  | name "<" type { "," type } ">"
+
+literal         ::= number | string | "NULL" | "TRUE" | "FALSE"
+name_or_qname   ::= name | qname
